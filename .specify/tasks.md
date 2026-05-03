@@ -91,14 +91,14 @@ craftnight/
 
 **Purpose**: Scaffold the project, install dependencies, configure tooling, and get a dev environment running.
 
-- [ ] T001 Scaffold SvelteKit project with TypeScript via `npm create svelte@latest` in `/Users/matt/Github/craftnight` (select TypeScript, ESLint, skeleton app)
-- [ ] T002 Install runtime dependencies in `package.json`: `drizzle-orm`, `postgres`, `@aws-sdk/client-s3`, `@resend/node`, `twilio`, `jose`, `cookie`
-- [ ] T003 Install dev dependencies: `drizzle-kit`, `dotenv`, `@sveltejs/adapter-node`, `typescript`, `@types/cookie`
-- [ ] T004 Configure `svelte.config.ts` to use `@sveltejs/adapter-node`
-- [ ] T005 Write `drizzle.config.ts` reading `DATABASE_URL` from `dotenv` (points `drizzle-kit` at `src/lib/db/schema.ts`, output to `drizzle/migrations/`)
-- [ ] T006 Write `docker-compose.yml` with three services: `postgres` (Postgres 16, port 5432, named volume), `app` (Node 20, depends on postgres), `cloudflared` (image `cloudflare/cloudflared`, env `CF_TUNNEL_TOKEN`)
-- [ ] T007 Write `.env.example` with all required vars: `DATABASE_URL`, `SESSION_SECRET`, `JWT_SECRET`, `RESEND_API_KEY`, `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM_NUMBER`, `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET`, `R2_PUBLIC_URL`, `CLOUDFLARE_TURNSTILE_SECRET`, `CF_TUNNEL_TOKEN`, `ORGANIZER_EMAIL`, `ORGANIZER_PASSWORD_HASH`
-- [ ] T008 Add Cloudflare Web Analytics script tag to `src/app.html` inside `<head>` (FR-032)
+- [x] T001 Scaffold SvelteKit project with TypeScript via `npm create svelte@latest` in `/Users/matt/Github/craftnight` (select TypeScript, ESLint, skeleton app)
+- [x] T002 Install runtime dependencies in `package.json`: `drizzle-orm`, `postgres`, `@aws-sdk/client-s3`, `resend`, `twilio`, `jose`, `cookie`
+- [x] T003 Install dev dependencies: `drizzle-kit`, `dotenv`, `@sveltejs/adapter-node`, `typescript`, `@types/cookie`
+- [x] T004 Configure `svelte.config.ts` to use `@sveltejs/adapter-node`
+- [x] T005 Write `drizzle.config.ts` reading `DATABASE_URL` from `dotenv` (points `drizzle-kit` at `src/lib/db/schema.ts`, output to `drizzle/migrations/`)
+- [x] T006 Write `docker-compose.yml` with three services: `postgres` (Postgres 16, port 5432, named volume), `app` (Node 20, depends on postgres), `cloudflared` (image `cloudflare/cloudflared`, env `CF_TUNNEL_TOKEN`)
+- [x] T007 Write `.env.example` with all required vars: `DATABASE_URL`, `SESSION_SECRET`, `JWT_SECRET`, `RESEND_API_KEY`, `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM_NUMBER`, `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET`, `R2_PUBLIC_URL`, `CLOUDFLARE_TURNSTILE_SECRET`, `CF_TUNNEL_TOKEN`, `ORGANIZER_EMAIL`, `ORGANIZER_PASSWORD_HASH`
+- [x] T008 Add Cloudflare Web Analytics script tag to `src/app.html` inside `<head>` (FR-032)
 
 **Checkpoint**: `npm run dev` starts without errors; app renders at localhost; `docker compose up postgres` starts Postgres successfully.
 

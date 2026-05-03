@@ -1,0 +1,37 @@
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: craftnight
+      POSTGRES_PASSWORD: craftnight
+      POSTGRES_DB: craftnight
+    ports:
+      - '5432:5432'
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  app:
+    image: node:20
+    working_dir: /app
+    volumes:
+      - .:/app
+    command: sh -c "npm install && npm run dev -- --host"
+    ports:
+      - '5173:5173'
+    environment:
+      DATABASE_URL: postgres://craftnight:craftnight@postgres:5432/craftnight
+    env_file:
+      - .env
+    depends_on:
+      - postgres
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    command: tunnel run
+    environment:
+      TUNNEL_TOKEN: ${CF_TUNNEL_TOKEN}
+    depends_on:
+      - app
+
+volumes:
+  postgres_data:
