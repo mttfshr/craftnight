@@ -42,17 +42,17 @@ The organizer can create a named Event that guests will subscribe to. The Event 
 
 ### User Story 3 — Organizer Publishes an Instance (Priority: P1)
 
-The organizer can publish a new Instance under an Event, specifying a date, time, and optional location. Publishing creates the Instance and makes it visible on the public event page. The announcement blast is a separate deliberate action.
+The organizer can publish a new Instance under an Event, specifying a date, start time, end time, and optional location. Publishing creates the Instance and makes it visible on the public event page. The announcement blast is a separate deliberate action.
 
 **Why this priority**: Instances are what guests RSVP to. Without them, the guest flow cannot function.
 
-**Independent Test**: With an existing Event, publish a new Instance with a date and time. Confirm it appears as the current Instance on the public event page.
+**Independent Test**: With an existing Event, publish a new Instance with a date, start time, and end time. Confirm it appears as the current Instance on the public event page.
 
 **Acceptance Scenarios**:
 
-1. **Given** an Event exists, **When** the organizer publishes an Instance with date, time, and location, **Then** the Instance appears as the current upcoming occurrence
-2. **Given** an Instance is published, **When** a guest visits the Event's public page, **Then** they see the Instance's date, time, and location
-3. **Given** the organizer submits an Instance without a date, **When** the form is submitted, **Then** an error is shown and the Instance is not created
+1. **Given** an Event exists, **When** the organizer publishes an Instance with date, start time, end time, and optional location, **Then** the Instance appears as the current upcoming occurrence
+2. **Given** an Instance is published, **When** a guest visits the Event's public page, **Then** they see the Instance's date, start time, end time, and location
+3. **Given** the organizer submits an Instance without a date, start time, or end time, **When** the form is submitted, **Then** an error is shown and the Instance is not created
 4. **Given** multiple Instances exist for an Event, **When** a guest views the public page, **Then** they see only the most recent upcoming Instance
 
 ---
@@ -157,6 +157,24 @@ The organizer can view a dashboard for a published Instance showing RSVP counts 
 
 ---
 
+### User Story 10 — Guest Manages Subscription (Priority: P2)
+
+A guest can visit a self-service page to view their subscription details, update their name or contact method, or unsubscribe entirely. Because identity is tied to a stable UUID rather than the contact method, guests can freely switch between email and SMS without losing their subscription history.
+
+**Why this priority**: Unsubscribe is a legal and ethical requirement but not needed before first real use.
+
+**Independent Test**: As a remembered guest, navigate to the manage subscription page. Confirm name and contact are shown. Unsubscribe, confirm Subscriber record is deactivated and cookie is cleared.
+
+**Acceptance Scenarios**:
+
+1. **Given** a guest visits the manage page with a valid subscriber cookie, **When** the page loads, **Then** they see their name and current contact method
+2. **Given** a guest updates their name or contact method and submits, **When** the action completes, **Then** the Subscriber record is updated and a confirmation is shown; their UUID and RSVP history are unchanged
+3. **Given** a guest clicks unsubscribe and confirms, **When** the action completes, **Then** their Subscriber record is deactivated, their cookie is cleared, and they see a confirmation message
+4. **Given** a guest visits the manage page via a personalized link in a notification, **When** they arrive, **Then** they are identified via the subscriber token in the URL without needing a cookie, and the token also sets a fresh cookie for future visits
+5. **Given** an unsubscribed guest visits the event page, **When** the page loads, **Then** the subscribe form is shown again (they can re-subscribe)
+
+---
+
 ### User Story 11 — Guest RSVPs via SMS Reply (Priority: P2)
 
 A subscriber who receives an SMS notification can reply with "yes", "no", or "maybe" (and common variants) to RSVP directly without visiting the event page. The system confirms their RSVP with a reply SMS.
@@ -177,24 +195,6 @@ A subscriber who receives an SMS notification can reply with "yes", "no", or "ma
 
 ---
 
-### User Story 10 — Guest Manages Subscription (Priority: P2)
-
-A guest can visit a self-service page to view their subscription details, update their name or contact method, or unsubscribe entirely. Because identity is tied to a stable UUID rather than the contact method, guests can freely switch between email and SMS without losing their subscription history.
-
-**Why this priority**: Unsubscribe is a legal and ethical requirement but not needed before first real use.
-
-**Independent Test**: As a remembered guest, navigate to the manage subscription page. Confirm name and contact are shown. Unsubscribe, confirm Subscriber record is deactivated and cookie is cleared.
-
-**Acceptance Scenarios**:
-
-1. **Given** a guest visits the manage page with a valid subscriber cookie, **When** the page loads, **Then** they see their name and current contact method
-2. **Given** a guest updates their name or contact method and submits, **When** the action completes, **Then** the Subscriber record is updated and a confirmation is shown; their UUID and RSVP history are unchanged
-3. **Given** a guest clicks unsubscribe and confirms, **When** the action completes, **Then** their Subscriber record is deactivated, their cookie is cleared, and they see a confirmation message
-4. **Given** a guest visits the manage page via a personalized link in a notification, **When** they arrive, **Then** they are identified via the subscriber token in the URL without needing a cookie, and the token also sets a fresh cookie for future visits
-5. **Given** an unsubscribed guest visits the event page, **When** the page loads, **Then** the subscribe form is shown again (they can re-subscribe)
-
----
-
 ## Requirements
 
 ### Functional Requirements
@@ -203,7 +203,7 @@ A guest can visit a self-service page to view their subscription details, update
 - **FR-002**: System MUST support a single organizer account configured via environment variables
 - **FR-003**: System MUST allow creation of multiple Events, each with a unique slug used as its public URL (`/events/[slug]`), a cover image, and an accent color
 - **FR-023**: System MUST apply each Event's cover image and accent color to its public event page (accent color tints buttons and headings via CSS custom properties)
-- **FR-004**: System MUST allow creation of Instances with date, time, and optional location under an Event
+- **FR-004**: System MUST allow creation of Instances with date, start time, end time, and optional location under an Event
 - **FR-005**: System MUST display the most recent upcoming Instance on the public event page
 - **FR-006**: System MUST assign a stable UUID to each Subscriber at creation time; this UUID is the identity key stored in the remember-me cookie and encoded in JWT tokens
 - **FR-006a**: System MUST accept guest subscriptions with name + (email or phone); each Subscriber record is scoped to a single Event
@@ -214,12 +214,13 @@ A guest can visit a self-service page to view their subscription details, update
 - **FR-010**: System MUST send announcement blasts to all active subscribers via their chosen channel
 - **FR-011**: System MUST send reminder blasts only to subscribers with yes or maybe RSVP status
 - **FR-012**: System MUST prevent duplicate announcement blasts for the same Instance
-- **FR-013**: System MUST display RSVP counts broken out by yes / maybe / no on the Instance dashboard
+- **FR-013**: System MUST display RSVP counts broken out by yes / maybe / no on the Instance dashboard, along with a count of subscribers who have not responded
+- **FR-028**: *(removed)*
 - **FR-014**: System MUST display subscriber list with name, contact, and per-Instance RSVP status
 - **FR-015**: System MUST provide a self-service unsubscribe flow accessible via personalized token link in notifications and via the event page for cookie-identified guests
 - **FR-018**: System MUST generate a signed JWT containing subscriber ID and 30-day expiry for each notification sent; no token storage table required
 - **FR-019**: System MUST identify a guest arriving via a subscriber token link and set a fresh remember-me cookie on arrival
-- **FR-020**: System MUST lock RSVP editing once the Instance date has passed
+- **FR-020**: System MUST lock RSVP editing once the Instance date has passed; lock triggers at midnight on the Instance date (date-only comparison against server time)
 - **FR-021**: System MUST display past Instances as read-only on the public event page with a "this event has passed" state
 - **FR-022**: Organizer dashboard MUST show a list of all Events as the top-level view
 - **FR-016**: System MUST deliver email notifications via Resend
@@ -229,10 +230,18 @@ A guest can visit a self-service page to view their subscription details, update
 - **FR-026**: System MUST match inbound SMS sender phone number to a Subscriber record and update their RSVP for the current Instance
 - **FR-027**: System MUST reply with a confirmation SMS after a successful RSVP-via-reply
 - **FR-029**: Public event pages MUST include Open Graph meta tags (`og:title`, `og:description`, `og:image`) using the Event name, description, and cover image respectively
+- **FR-030**: Cover images MUST be stored in Cloudflare R2 and served via the bucket's public URL; no image files are stored on the Droplet filesystem
+- **FR-031**: The first-time subscribe form on public event pages MUST be protected by Cloudflare Turnstile; the server action MUST validate the Turnstile token before creating a Subscriber or RSVP record. Returning guests identified by a valid subscriber cookie are exempt from Turnstile on RSVP updates.
+- **FR-032**: Public event pages MUST include the Cloudflare Web Analytics script tag
+- **FR-033**: Each published Instance MUST have a downloadable ICS endpoint at `/events/[slug]/instances/[instanceId]/calendar.ics`; the response MUST set `Content-Type: text/calendar` and `Content-Disposition: attachment` (relates to US4)
+- **FR-034**: The ICS file MUST include event summary (Event name), description (Event description), DTSTART (date + start time), DTEND (date + end time), location (if set), and a stable VEVENT UID derived from the Instance UUID
+- **FR-035**: The public event page MUST include an "Add to Calendar" link pointing to the ICS endpoint for the current upcoming Instance; the link MUST NOT appear when the Instance date has passed (relates to US4)
+- **FR-036**: Public event pages MUST include a `<script type="application/ld+json">` block containing a `schema.org/Event` object with `name`, `description`, `startDate`, `endDate`, `location`, and `image` fields (relates to US4)
+- **FR-037**: The Instance dashboard MUST display a count of blast delivery failures alongside the sent count after an announcement or reminder blast; failure data is sourced from the blast_log table
 
 ### Non-Functional Requirements
 
-- **NF-001**: Public event page MUST render without JavaScript (server-rendered)
+- **NF-001**: Public event pages MUST be server-rendered — core content (event name, instance details) must be present in the initial HTML response without requiring JavaScript execution. JavaScript is used for progressive enhancement (Turnstile, analytics, RSVP interactions) but is not required to read the page.
 - **NF-002**: Organizer session MUST be stored as a signed `httpOnly` cookie; no server-side session table required. Session MUST expire after 24 hours.
 - **NF-003**: Subscriber cookie MUST persist for 1 year
 - **NF-004**: Notification blast MUST complete within 60 seconds for up to 100 subscribers

@@ -1,3 +1,3 @@
-Working on: MVP spec — complete and clarified, ready to plan
-Status: Constitution updated (SvelteKit + Drizzle + Postgres), spec.md written with 11 user stories (8 P1, 3 P2), 29 FR, 6 NF, 11 clarifications across 2 rounds
-Next: Run plan workflow to produce technical implementation plan
+Working on: Task generation — all three documents consistent and cross-checked, ready to break into implementable tasks
+Status: Constitution, spec.md, plan.md fully consistent. 11 issues resolved: US8 scoped to Phase 7 only, end_time required (not nullable), US10/US11 reordered, all .js → .ts in plan, plan summary updated, FR-020 lock timing clarified, FR-031 Turnstile scope clarified, FR-028 noted as removed, FR-036 (JSON-LD schema.org/Event) added, FR-037 (blast failure count) added, ICS fallback logic removed. 37 FRs, 6 NFs, 11 user stories.
+Next: Run tasks-generator workflow to produce flat, dependency-ordered task list

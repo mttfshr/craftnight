@@ -33,7 +33,11 @@ A lightweight recurring event tool that lets organizers announce event instances
 - **Resend for email.** Notification delivery for email subscribers.
 - **Twilio for SMS.** Notification delivery for phone subscribers.
 - **Digital Ocean hosting.** Single droplet, Docker Compose. No serverless/edge constraints.
-- **Plain JavaScript.** No TypeScript requirement. Svelte components and server routes in JS.
+- **TypeScript.** Svelte components and server routes in TypeScript. Drizzle schema inference provides end-to-end type safety from DB layer through SvelteKit route types.
+- **Cloudflare R2 for image storage.** Cover images uploaded to an existing public R2 bucket. No filesystem storage of user uploads on the Droplet.
+- **Cloudflare Tunnel for ingress.** `cloudflared` runs as a Docker Compose service. The Droplet exposes no public inbound ports. Cloudflare handles SSL termination and proxying.
+- **Cloudflare Turnstile for bot protection.** Applied to the public subscribe/RSVP form. Privacy-respecting, no user puzzles.
+- **Cloudflare Web Analytics.** Injected into public event pages. Cookie-free, no fingerprinting — consistent with the privacy constitution value.
 
 ---
 
