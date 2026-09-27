@@ -18,6 +18,10 @@ export const actions: Actions = {
 		const end_time = form.get('end_time');
 		const location = form.get('location');
 		const description = form.get('description');
+		// A checkbox posts "on" when ticked and nothing at all when not (FR-048).
+		// Only ever one of two known values is written: the column is a CHECKed
+		// enum, and the form field is not trusted to supply it.
+		const status = form.get('proposed') === 'on' ? 'proposed' : 'confirmed';
 
 		if (typeof date !== 'string' || !date) return fail(400, { error: 'Date is required.' });
 		if (typeof start_time !== 'string' || !start_time) return fail(400, { error: 'Start time is required.' });
@@ -34,7 +38,8 @@ export const actions: Actions = {
 				start_time,
 				end_time,
 				location: typeof location === 'string' && location.trim() ? location.trim() : null,
-				description: storedDescription
+				description: storedDescription,
+				status
 			})
 			.returning({ id: instances.id });
 

@@ -425,36 +425,37 @@ Each phase adds value without breaking previous ones. The app is functional and 
 
 ### Step 1: Schema
 
-- [ ] T076 Add a `status` column to `instances` in `src/lib/db/schema.ts` — `text('status').notNull().default('confirmed')`; add an index on `(event_id, status)`; run `drizzle-kit generate` and `drizzle-kit push` to produce and apply the migration (FR-047)
+- [x] T076 `instances.status` column, `(event_id, status)` index, and a CHECK constraint on the three values — done in Phase 15 as part of the fresh D1 schema (T092), so no separate migration was needed.
 
 ---
 
 ### Step 2: Organizer — create a proposed Instance
 
-- [ ] T077 [P] Update `src/routes/organizer/events/[id]/instances/new/+page.svelte` — add a checkbox "This is a proposed date (part of a date poll)" below the description field
-- [ ] T077a Update `src/routes/organizer/events/[id]/instances/new/+page.server.ts` — read the checkbox; insert with `status: 'proposed'` if checked, else the default `'confirmed'` (FR-048)
+- [x] T077 Create-instance form: checkbox "This is a proposed date (part of a date poll)" with a one-line explanation that candidates get no calendar link until confirmed.
+- [x] T077a Create-instance action reads the checkbox and writes `'proposed'` or `'confirmed'` — only ever one of those two literals, never the form value, since the column is a CHECKed enum (FR-048).
 
 ---
 
 ### Step 3: Organizer — compare candidates and confirm
 
-- [ ] T078 Update `src/routes/organizer/events/[id]/+page.server.ts` `load()` — group the event's instances by status; for `proposed` instances, include RSVP tallies (yes/maybe/no counts) in the same query pattern used by the instance dashboard (US9) (FR-051)
-- [ ] T079 Update `src/routes/organizer/events/[id]/+page.svelte` — when any `proposed` instances exist, render a "Proposed dates" section above the regular instance list; each candidate shows its date and yes/maybe/no tally alongside a "Confirm this date" button
-- [ ] T080 Add a `confirmInstance` action to `src/routes/organizer/events/[id]/+page.server.ts` — given an `instanceId`: in one transaction, set that instance's `status` to `confirmed` and set every other `status = 'proposed'` instance for the same `event_id` to `cancelled` (FR-052)
-- [ ] T081 Update `src/routes/organizer/events/[id]/instances/[instanceId]/+page.svelte` — if the instance's status is `cancelled`, show a small "Cancelled" label near the top so the organizer isn't confused landing on an old candidate directly (FR-054)
+- [x] T078 Organizer event page `load()`: candidates split out soonest-first for side-by-side comparison, each with yes/maybe/no tallies from `rsvpTallies` (FR-051). Cancelled instances stay in the main list, labelled (FR-054).
+- [x] T079 Organizer event page: a "Proposed dates" table above the list with per-candidate tallies and a "Confirm this date" button whose `confirm()` prompt says how many other dates will be cancelled and that it can't be undone.
+- [x] T080 `confirmInstance` action, backed by `confirmInstance()` in `src/lib/server/polls.ts`. **Corrected from the task text in two ways.** (1) "One transaction": D1 has no interactive transactions; the two UPDATEs go through one `db.batch()`, and `tests/polls.test.ts` proves against real D1 that a failing statement rolls the whole batch back, rather than citing the docs. (2) The target is now validated — it must be a `proposed` instance of THIS event. As originally written, "confirming" an already-cancelled candidate would have resurrected it while cancelling every live one, and an id from another Event would have flipped that Event's poll. A double-clicked button now loses cleanly (409) because the second call sees the target is no longer proposed.
+- [x] T081 Instance dashboard shows a "Cancelled" notice (red) on a cancelled candidate and a "Proposed — compare candidates" notice on a live one, so landing on an old date directly can't be mistaken for a live one.
 
 ---
 
 ### Step 4: Public page — Proposed section
 
-- [ ] T082 Update `src/routes/events/[slug]/+page.server.ts` `load()` — filter the existing `upcomingInstances` and `pastInstances` queries to `status = 'confirmed'`; add a `proposedInstances` query (`status = 'proposed'`, sorted by date ascending); fold their RSVPs into the existing `rsvpsByInstance` map (FR-055, FR-050)
-- [ ] T083 Update `src/routes/events/[slug]/+page.svelte` — render a Proposed section above Upcoming, one `InstanceCard` per candidate with the same inline RSVP widget as Upcoming cards, but no "Add to Calendar" link (FR-049)
-- [ ] T084 Confirm the `subscribe` and `rsvp` actions in `+page.server.ts` need no change to accept an `instanceId` belonging to a `proposed` instance — they already only check "belongs to this event" and "not past," with no status filter; add a one-line comment noting this is intentional so a future edit doesn't accidentally restrict it to `confirmed` (FR-050)
-- [ ] T085 [P] Confirm the ICS endpoint, OG meta tags, and JSON-LD block — all keyed off `upcomingInstances[0]`, which is confirmed-only by construction after T082 — never reference `proposed` or `cancelled` instances; no code change expected, just a manual check at the phase checkpoint (FR-053)
+- [x] T082 Public `load()`: which section each instance belongs in — status AND date — is one pure, tested function, `partitionInstances` (`src/lib/utils/instances.ts`). Cancelled appears nowhere; proposed candidates appear regardless of date (a stale one is marked `locked`); upcoming and past are confirmed-only. The visitor's RSVP lookup covers only instances actually shown.
+- [x] T083 Public page: a "Proposed dates" section above Upcoming, one `InstanceCard` per candidate with the same inline RSVP, a "Proposed" tag, and no calendar link. The Upcoming section is dropped while a poll is running with nothing confirmed, since "No upcoming dates" would contradict the section above it. A candidate whose date passed shows "RSVPs are closed" instead of a form that could only fail on submit (spec scenario 8).
+- [x] T084 **Corrected: the actions DID need a change.** The task said no status filter was needed, and that holds for `proposed` (FR-050) but not for `cancelled`: a guest with a stale page open while the organizer confirmed another date could RSVP "yes" to a candidate that no longer appears anywhere. The check is extracted to `loadRsvpTarget` (`src/lib/server/rsvp-target.ts`): confirmed and proposed accepted, cancelled rejected ("This date was cancelled"), then the date lock in the Event's timezone. Tested against real D1, including the stale-page and 6:30pm-Pacific cases.
+- [x] T085 **Corrected: the premise was wrong.** The task said the calendar endpoint is "keyed off `upcomingInstances[0]`" and needs no change. It isn't — the route takes `instanceId` straight from the URL, so a cancelled (or merely tentative) date still downloaded as a calendar file, violating FR-053. The endpoint now returns 404 for anything not `confirmed`. 404 rather than 403, so a cancelled date isn't even confirmed to have existed. OG meta and JSON-LD are keyed off `upcomingInstances[0]`, which is confirmed-only by construction, so those needed no change.
+- [x] T085a **Found while building this phase: the public page never displayed action errors.** Neither `+page.svelte` nor `InstanceCard` read `form`, so a failed Turnstile check, an unreadable phone number (my Phase 17 messages), or a date that had just been cancelled all looked like the button doing nothing. All 11 failure sites in the two public actions now go through one `reject()` helper that attaches the instance id; the page shows the message on that card via `errorFor()`. A failure whose card is no longer on the page (a date cancelled since the guest loaded it — without JavaScript the response is a fresh page) gets a page-level banner instead of vanishing.
 
 ---
 
-**Checkpoint**: Publish two proposed Instances for an Event. On the public page, a Proposed section shows both candidates with independent RSVP forms and no calendar links. RSVP yes to one, maybe to the other. On the organizer's event page, both candidates show their tallies. Confirm one — reload the public page: the confirmed candidate now appears as a normal Upcoming Instance with its calendar link; the other candidate is gone from every section. On the organizer side, the cancelled candidate's dashboard still shows its data, labeled "Cancelled".
+**Checkpoint (met — verified end to end in workerd, both as a guest and as the organizer)**: Publish two proposed Instances for an Event. On the public page, a Proposed section shows both candidates with independent RSVP forms and no calendar links. RSVP yes to one, maybe to the other. On the organizer's event page, both candidates show their tallies. Confirm one — reload the public page: the confirmed candidate now appears as a normal Upcoming Instance with its calendar link; the other candidate is gone from every section. On the organizer side, the cancelled candidate's dashboard still shows its data, labeled "Cancelled".
 ---
 
 ## Phase 15: Platform Migration — Cloudflare Workers + D1

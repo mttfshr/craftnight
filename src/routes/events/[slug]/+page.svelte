@@ -2,15 +2,16 @@
 	import { page } from '$app/state';
 	import InstanceCard from '$lib/components/InstanceCard.svelte';
 	import { renderJsonLd } from '$lib/utils/jsonld';
-	import type { PageData } from './$types';
+	import type { PageData, ActionData } from './$types';
 
-	let { data }: { data: PageData } = $props();
+	let { data, form }: { data: PageData; form: ActionData } = $props();
 
 	const {
 		event,
 		descriptionText,
 		metaDescription,
 		subscriber,
+		proposedInstances,
 		upcomingInstances,
 		pastInstances,
 		rsvpsByInstance,
@@ -19,7 +20,26 @@
 
 	const firstUpcoming = $derived(upcomingInstances[0] ?? null);
 	const unsubscribed = $derived(page.url.searchParams.get('unsubscribed') === '1');
-	const showTurnstileScript = $derived(!subscriber && upcomingInstances.length > 0);
+	// Turnstile guards the first-time form, which renders on every card that can
+	// still take an RSVP — so the script is needed for a live candidate too.
+	const showTurnstileScript = $derived(
+		!subscriber && (upcomingInstances.length > 0 || proposedInstances.some((i) => !i.locked))
+	);
+
+	/** The last submit's failure message, but only on the card it was for. */
+	const errorFor = (instanceId: string) => (form?.instanceId === instanceId ? form.error : null);
+
+	// A failure whose card isn't on the page has nowhere to show. That happens
+	// when a guest submits for a date that has since been cancelled: without
+	// JavaScript the response is a fresh page, and the card they clicked on is
+	// gone. (Turnstile and other failures with no instance land here too.) It
+	// gets a page-level banner instead of vanishing.
+	const shownIds = $derived(
+		new Set([...proposedInstances, ...upcomingInstances].map((i) => i.id))
+	);
+	const orphanError = $derived(
+		form && !(form.instanceId && shownIds.has(form.instanceId)) ? form.error : null
+	);
 </script>
 
 <svelte:head>
@@ -65,20 +85,25 @@
 		<p class="notice-success">You've been unsubscribed. We hope to see you again!</p>
 	{/if}
 
+	{#if orphanError}
+		<p class="notice-error" role="alert">{orphanError}</p>
+	{/if}
+
 	{#if event.descriptionHtml}
 		<!-- Server-rendered markdown; raw HTML in the source was escaped (ADR-007). -->
 		<!-- eslint-disable-next-line svelte/no-at-html-tags -->
 		{@html event.descriptionHtml}
 	{/if}
 
-	<!-- ── Upcoming ────────────────────────────────────────── -->
-	<section class="section-upcoming">
-		<h2>Upcoming</h2>
+	{#if proposedInstances.length > 0}
+		<!-- ── Proposed (date poll) ──────────────────────────── -->
+		<section class="section-proposed">
+			<h2>Proposed dates</h2>
+			<p class="proposed-intro">
+				We're still picking a date. RSVP to each one that could work for you.
+			</p>
 
-		{#if upcomingInstances.length === 0}
-			<p><em>No upcoming dates scheduled yet. Check back soon.</em></p>
-		{:else}
-			{#each upcomingInstances as instance}
+			{#each proposedInstances as instance (instance.id)}
 				<InstanceCard
 					{instance}
 					{subscriber}
@@ -86,10 +111,38 @@
 					eventSlug={event.slug}
 					accentColor={event.accent_color ?? '#e85d04'}
 					{turnstileSiteKey}
+					variant="proposed"
+					locked={instance.locked}
+					error={errorFor(instance.id)}
 				/>
 			{/each}
-		{/if}
-	</section>
+		</section>
+	{/if}
+
+	<!-- ── Upcoming ────────────────────────────────────────── -->
+	<!-- With a poll running and nothing confirmed yet, "no upcoming dates" would
+	     contradict the Proposed section above it, so the section is dropped. -->
+	{#if upcomingInstances.length > 0 || proposedInstances.length === 0}
+		<section class="section-upcoming">
+			<h2>Upcoming</h2>
+
+			{#if upcomingInstances.length === 0}
+				<p><em>No upcoming dates scheduled yet. Check back soon.</em></p>
+			{:else}
+				{#each upcomingInstances as instance (instance.id)}
+					<InstanceCard
+						{instance}
+						{subscriber}
+						rsvp={rsvpsByInstance[instance.id]}
+						eventSlug={event.slug}
+						accentColor={event.accent_color ?? '#e85d04'}
+						{turnstileSiteKey}
+						error={errorFor(instance.id)}
+					/>
+				{/each}
+			{/if}
+		</section>
+	{/if}
 
 	<!-- ── Past ───────────────────────────────────────────── -->
 	<section class="section-past">
@@ -126,6 +179,8 @@
 	.content { max-width: 600px; margin: 0 auto; padding: 1rem 1.25rem 4rem; }
 
 	.section-past { margin-top: 2.5rem; }
+	.section-proposed { margin-bottom: 1.5rem; }
+	.proposed-intro { margin-top: -0.25rem; font-size: 0.9rem; opacity: 0.75; }
 
 	.past-instance {
 		display: flex;
@@ -150,5 +205,9 @@
 	.notice-success {
 		color: #166534; background: #f0fdf4;
 		border: 1px solid #bbf7d0; padding: 0.65rem 1rem; border-radius: 6px;
+	}
+	.notice-error {
+		color: #991b1b; background: #fef2f2;
+		border: 1px solid #fecaca; padding: 0.65rem 1rem; border-radius: 6px;
 	}
 </style>

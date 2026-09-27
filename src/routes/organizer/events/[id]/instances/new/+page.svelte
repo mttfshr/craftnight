@@ -28,6 +28,17 @@
 			<MarkdownField name="description" />
 		</label>
 
+		<label class="poll-toggle">
+			<input name="proposed" type="checkbox" />
+			<span>
+				This is a proposed date <small>(part of a date poll)</small>
+			</span>
+		</label>
+		<p class="poll-hint">
+			Add two or more proposed dates and guests can RSVP to each. When you confirm one, the others
+			are cancelled. Proposed dates don't get a calendar link until then.
+		</p>
+
 		{#if form?.error}
 			<p class="notice-error">{form.error}</p>
 		{/if}
@@ -40,6 +51,9 @@
 </main>
 
 <style>
+	.poll-toggle { display: flex; align-items: center; gap: 0.5rem; }
+	.poll-toggle input { width: auto; margin: 0; }
+	.poll-hint { margin-top: -0.25rem; font-size: 0.85rem; opacity: 0.7; }
 	.notice-error { color: #991b1b; background: #fef2f2; border: 1px solid #fecaca; padding: 0.65rem 1rem; border-radius: 6px; }
 	.btn-secondary { background: transparent; color: var(--text-color, #111); border: 1px solid var(--border, #ccc); }
 </style>

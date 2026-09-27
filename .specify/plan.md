@@ -110,6 +110,8 @@ craftnight/
     │   │   ├── auth.ts              # Session sign/verify (WebCrypto HMAC, exp in payload); subscriber cookie read/write
     │   │   ├── password.ts          # PBKDF2 hash + constant-time verify (FR-059)
     │   │   ├── db-errors.ts         # isUniqueViolation — walks .cause, because drizzle wraps driver errors
+    │   │   ├── polls.ts             # confirmInstance (validated, atomic via db.batch) + rsvpTallies (ADR-005)
+    │   │   ├── rsvp-target.ts       # loadRsvpTarget: proposed OK, cancelled rejected, date lock in event tz
     │   │   ├── markdown.ts          # renderMarkdown / toPlainText / withDescriptionHtml — server-only (ADR-007)
     │   │   ├── subscribers.ts       # resolveSubscriber(db, ...) — cookie → email → phone → create
     │   │   ├── r2.ts                # uploadImage(bucket, file) via the R2 binding (ADR-006)
@@ -118,6 +120,7 @@ craftnight/
     │       ├── slugify.ts           # Event slug generation from name
     │       ├── dates.ts             # todayIn / isPast / isUpcoming / zonedTimeToUtc, all against events.timezone (FR-020, FR-056)
     │       ├── contact.ts           # readContact / normalizePhone / normalizeEmail (FR-061)
+    │       ├── instances.ts         # partitionInstances: which public section an instance is in (status x date)
     │       ├── jsonld.ts            # renderJsonLd — escapes < > & so descriptions can't close the <script> (FR-036)
     │       └── ics.ts               # buildICS(input) → RFC 5545 string, UTC instants, escaped and folded (FR-034)
     └── routes/
@@ -383,6 +386,16 @@ The `load()` function returns `{ upcomingInstances, pastInstances }` instead of 
 - Positive: The whole feature is a thin extension of `InstanceCard`/RSVP mechanics already built for Phase 13 — no new tables, no new RSVP model, no notification changes.
 - Negative: Safe only for one live date-poll per Event at a time. If two independent polls ever need to run concurrently on the same Event, `confirmInstance` would need a poll/batch scope — deferred until it's an actual problem.
 - Requires: A migration adding `instances.status` (`text not null default 'confirmed'`) and an index on `(event_id, status)` for the Proposed-section query and the confirm/cancel update.
+
+**Amendments (2026-09-27, Phase 14)** — the decision stands; building it exposed gaps in how it was first written up:
+
+- **`confirmInstance` validates its target.** It must be a `proposed` instance of the Event being acted on. Without that, "confirming" a cancelled candidate resurrects it while cancelling every live one, and an id from another Event flips that Event's poll. Rejections are `not_found` / `not_proposed`.
+- **"One transaction" means `db.batch()`.** D1 has no interactive transactions, but a batch is applied atomically. `tests/polls.test.ts` verifies the rollback property against real D1 instead of relying on documentation.
+- **The RSVP actions do filter on status** — `cancelled` is rejected, `proposed` and `confirmed` accepted (`loadRsvpTarget`). The original text said there was no status filter, which is right for proposed and wrong for cancelled: a stale page could otherwise record an RSVP against a date that no longer appears anywhere.
+- **The calendar endpoint 404s for anything not `confirmed`.** It takes the instance id from the URL, so hiding the link was never enough.
+- **Visibility is one pure function**, `partitionInstances`, so a cancelled candidate cannot leak into a section through some other code path.
+- **A candidate whose date passes unconfirmed stays visible but locked** (spec scenario 8), rather than showing a form that can only error.
+- **Known limit, unchanged:** one live poll per Event. There is still no way to cancel or delete a single instance; see the clarifications log.
 
 ---
 

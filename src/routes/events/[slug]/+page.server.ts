@@ -1,8 +1,10 @@
 import { error, fail, redirect } from '@sveltejs/kit';
 import { events, instances, subscribers, rsvps } from '$lib/db/schema';
 import { eq, and, asc, inArray } from 'drizzle-orm';
-import { isPast, todayIn } from '$lib/utils/dates';
+import { todayIn } from '$lib/utils/dates';
+import { partitionInstances } from '$lib/utils/instances';
 import { readContact } from '$lib/utils/contact';
+import { loadRsvpTarget } from '$lib/server/rsvp-target';
 import { toPlainText, withDescriptionHtml } from '$lib/server/markdown';
 import { validateTurnstileToken } from '$lib/server/turnstile';
 import { resolveSubscriber } from '$lib/server/subscribers';
@@ -27,17 +29,23 @@ export const load: PageServerLoad = async ({ params, locals, platform }) => {
 		.where(eq(instances.event_id, event.id))
 		.orderBy(asc(instances.date));
 
+	// Which section each instance belongs in — status AND date — is decided in
+	// one tested place (FR-049, FR-053, FR-055). Cancelled ones appear nowhere.
+	const { proposed, upcoming, past } = partitionInstances(allInstances, today);
+
 	// Descriptions render to HTML here, on the server, so micromark never ships
 	// to the browser. Past instances show no description (FR-043), so only
-	// upcoming ones are rendered.
-	const upcomingInstances = allInstances
-		.filter((i) => i.date >= today)
-		.sort((a, b) => a.date.localeCompare(b.date))
-		.map((i) => withDescriptionHtml(i));
+	// upcoming and proposed ones are rendered.
+	const upcomingInstances = upcoming.map((i) => withDescriptionHtml(i));
+	const pastInstances = past;
 
-	const pastInstances = allInstances
-		.filter((i) => i.date < today)
-		.sort((a, b) => b.date.localeCompare(a.date)); // most recent first
+	// A candidate whose date passed without being confirmed or cancelled stays
+	// visible, but its RSVPs lock (spec scenario 8). Decided here against the
+	// Event's timezone so the card never has to do date maths in the browser.
+	const proposedInstances = proposed.map((i) => ({
+		...withDescriptionHtml(i),
+		locked: i.date < today
+	}));
 
 	// Resolve visitor identity from cookie
 	let subscriber = null;
@@ -59,15 +67,14 @@ export const load: PageServerLoad = async ({ params, locals, platform }) => {
 		if (sub) {
 			subscriber = sub;
 
-			// One query for all RSVPs across all instances
-			const allInstanceIds = allInstances.map((i) => i.id);
-			if (allInstanceIds.length > 0) {
+			// One query for the visitor's RSVPs across every instance that is
+			// actually shown. Cancelled instances are not, so they are not fetched.
+			const visibleIds = [...proposed, ...upcoming, ...past].map((i) => i.id);
+			if (visibleIds.length > 0) {
 				const visitorRsvps = await db
 					.select()
 					.from(rsvps)
-					.where(
-						and(eq(rsvps.subscriber_id, sub.id), inArray(rsvps.instance_id, allInstanceIds))
-					);
+					.where(and(eq(rsvps.subscriber_id, sub.id), inArray(rsvps.instance_id, visibleIds)));
 
 				// Key by instance_id for O(1) lookup in template
 				for (const rsvp of visitorRsvps) {
@@ -84,6 +91,7 @@ export const load: PageServerLoad = async ({ params, locals, platform }) => {
 		descriptionText: toPlainText(event.description),
 		metaDescription: toPlainText(event.description, { singleLine: true, maxLength: 200 }),
 		subscriber,
+		proposedInstances,
 		upcomingInstances,
 		pastInstances,
 		rsvpsByInstance,
@@ -117,29 +125,23 @@ async function upsertRsvp(db: Db, subscriberId: string, instanceId: string, stat
 		});
 }
 
-/**
- * Look up and validate an instance belongs to the given event and is not past.
- * The lock is evaluated here, server-side, on every submit, against the
- * Event's own timezone — so a stale open page can't record a late RSVP.
+/*
+ * Instance validation for both actions lives in $lib/server/rsvp-target. It
+ * deliberately accepts `proposed` instances (guests RSVP to every candidate of
+ * a date poll, FR-050) and rejects `cancelled` ones — so do not "simplify" it
+ * to a bare belongs-to-this-event check, and do not restrict it to `confirmed`.
  */
-async function loadAndValidateInstance(
-	db: Db,
-	instanceId: unknown,
-	eventId: string,
-	timezone: string
-) {
-	if (typeof instanceId !== 'string' || !instanceId) {
-		return { instance: null, err: 'No instance specified.' };
-	}
-	const [instance] = await db
-		.select()
-		.from(instances)
-		.where(and(eq(instances.id, instanceId), eq(instances.event_id, eventId)));
-	if (!instance) return { instance: null, err: 'Instance not found.' };
-	if (isPast(instance.date, timezone)) {
-		return { instance: null, err: 'This event has already passed.' };
-	}
-	return { instance, err: null };
+
+/**
+ * Every action failure carries the instance it was for, and the page shows the
+ * message on THAT card (InstanceCard's `error` prop). Before this, nothing on the
+ * public page read the action result at all, so a failed Turnstile check, an
+ * unreadable phone number, or a date that had just been cancelled all looked
+ * like the button doing nothing.
+ */
+function reject(status: number, error: string, form: FormData) {
+	const id = form.get('instanceId');
+	return fail(status, { error, instanceId: typeof id === 'string' ? id : null });
 }
 
 // ─── Actions ─────────────────────────────────────────────────────────────────
@@ -162,21 +164,21 @@ export const actions: Actions = {
 			getClientAddress()
 		);
 		if (!verified) {
-			return fail(400, { error: 'Human verification failed. Please try again.' });
+			return reject(400, 'Human verification failed. Please try again.', form);
 		}
 
 		// Load event
 		const [event] = await db.select().from(events).where(eq(events.slug, params.slug));
-		if (!event) return fail(404, { error: 'Event not found.' });
+		if (!event) return reject(404, 'Event not found.', form);
 
 		// Validate instance
-		const { instance, err: instanceErr } = await loadAndValidateInstance(
+		const { instance, err: instanceErr } = await loadRsvpTarget(
 			db,
 			form.get('instanceId'),
 			event.id,
 			event.timezone
 		);
-		if (!instance) return fail(400, { error: instanceErr! });
+		if (!instance) return reject(400, instanceErr!, form);
 
 		// Validate subscriber fields
 		const name = form.get('name');
@@ -185,21 +187,18 @@ export const actions: Actions = {
 		const status = form.get('rsvp');
 
 		if (typeof name !== 'string' || !name.trim()) {
-			return fail(400, { subscribeError: 'Name is required.', instanceId: instance.id });
+			return reject(400, 'Name is required.', form);
 		}
 		// Normalized on the way in (T117a): equal contacts must be stored equal, or
 		// identity matching splits one guest into two. A filled-in field that
 		// can't be read is reported as that, not silently dropped.
 		const contact = readContact(email, phone);
 		if (contact.error) {
-			return fail(400, { subscribeError: contact.error, instanceId: instance.id });
+			return reject(400, contact.error, form);
 		}
 		const { email: emailVal, phone: phoneVal } = contact;
 		if (!isValidStatus(status)) {
-			return fail(400, {
-				subscribeError: 'Please select an RSVP status.',
-				instanceId: instance.id
-			});
+			return reject(400, 'Please select an RSVP status.', form);
 		}
 
 		// Resolve identity + upsert RSVP
@@ -230,24 +229,24 @@ export const actions: Actions = {
 		const status = form.get('rsvp');
 
 		if (!isValidStatus(status)) {
-			return fail(400, { error: 'Please select a valid RSVP status.' });
+			return reject(400, 'Please select a valid RSVP status.', form);
 		}
 
 		const cookieUUID = locals.subscriberCookie[params.slug];
-		if (!cookieUUID) return fail(401, { error: 'Not identified. Please subscribe first.' });
+		if (!cookieUUID) return reject(401, 'Not identified. Please subscribe first.', form);
 
 		// Load event
 		const [event] = await db.select().from(events).where(eq(events.slug, params.slug));
-		if (!event) return fail(404, { error: 'Event not found.' });
+		if (!event) return reject(404, 'Event not found.', form);
 
 		// Validate instance
-		const { instance, err: instanceErr } = await loadAndValidateInstance(
+		const { instance, err: instanceErr } = await loadRsvpTarget(
 			db,
 			form.get('instanceId'),
 			event.id,
 			event.timezone
 		);
-		if (!instance) return fail(400, { error: instanceErr! });
+		if (!instance) return reject(400, instanceErr!, form);
 
 		// Verify subscriber identity. The cookie is HMAC-signed, so this is a
 		// liveness check (deleted/deactivated record) rather than a trust check.
@@ -261,7 +260,7 @@ export const actions: Actions = {
 					eq(subscribers.active, true)
 				)
 			);
-		if (!subscriber) return fail(401, { error: 'Subscriber not found.' });
+		if (!subscriber) return reject(401, 'Subscriber not found.', form);
 
 		await upsertRsvp(db, subscriber.id, instance.id, status);
 

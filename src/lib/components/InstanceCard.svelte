@@ -8,7 +8,10 @@
 		rsvp,
 		eventSlug,
 		accentColor,
-		turnstileSiteKey
+		turnstileSiteKey,
+		variant = 'confirmed',
+		locked = false,
+		error = null
 	}: {
 		// descriptionHtml is rendered server-side in the page's load(); this
 		// component never touches markdown or a server module.
@@ -20,6 +23,15 @@
 		// From load()'s page data, not $env/static/public — see the comment in
 		// events/[slug]/+page.server.ts on why this can't be a static env import.
 		turnstileSiteKey: string;
+		// 'proposed' is a date-poll candidate: tagged as such, and with no
+		// calendar link, since a tentative date shouldn't go into anyone's
+		// calendar (FR-049).
+		variant?: 'confirmed' | 'proposed';
+		// A candidate whose date passed unconfirmed. Its RSVPs are locked, so it
+		// shows a note instead of a form that could only fail on submit.
+		locked?: boolean;
+		// The failure message from the last submit, if it was for THIS card.
+		error?: string | null;
 	} = $props();
 
 	const dt = $derived(new Date(instance.date + 'T00:00:00'));
@@ -44,6 +56,7 @@
 		<span class="month">{monthLabel}</span>
 		<span class="day">{dayNum}</span>
 		<span class="weekday">{weekday}</span>
+		{#if variant === 'proposed'}<span class="tag">Proposed</span>{/if}
 	</div>
 
 	<div class="card-meta">
@@ -61,13 +74,20 @@
 		</div>
 	{/if}
 
-	<a class="ics-link" href="/events/{eventSlug}/instances/{instance.id}/calendar.ics">
-		Add to calendar ↓
-	</a>
+	{#if variant === 'confirmed'}
+		<a class="ics-link" href="/events/{eventSlug}/instances/{instance.id}/calendar.ics">
+			Add to calendar ↓
+		</a>
+	{/if}
 
 	<!-- RSVP -->
 	<div class="rsvp-section">
-		{#if subscriber}
+		{#if error}
+			<p class="notice-error" role="alert">{error}</p>
+		{/if}
+		{#if locked}
+			<p class="locked-note">This date has passed, so RSVPs are closed.</p>
+		{:else if subscriber}
 			<p class="rsvp-greeting">Hey <strong>{subscriber.name}</strong> — are you coming?</p>
 			<form method="POST" action="?/rsvp" use:enhance>
 				<input type="hidden" name="instanceId" value={instance.id} />
@@ -137,6 +157,31 @@
 	.weekday {
 		font-size: 0.9rem;
 		opacity: 0.6;
+	}
+	.tag {
+		margin-left: auto;
+		font-size: 0.7rem;
+		font-weight: 600;
+		letter-spacing: 0.06em;
+		text-transform: uppercase;
+		padding: 0.15rem 0.55rem;
+		border: 1px solid var(--accent);
+		border-radius: 999px;
+		color: var(--accent);
+	}
+	.locked-note {
+		margin: 0;
+		font-size: 0.9rem;
+		opacity: 0.7;
+	}
+	.notice-error {
+		margin: 0 0 0.75rem;
+		padding: 0.5rem 0.75rem;
+		font-size: 0.875rem;
+		color: #991b1b;
+		background: #fef2f2;
+		border: 1px solid #fecaca;
+		border-radius: 6px;
 	}
 
 	/* ── Meta row ── */

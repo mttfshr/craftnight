@@ -65,6 +65,16 @@
 		<h1>{formatDate(instance.date)}</h1>
 		<a href="/organizer/events/{event.id}/instances/{instance.id}/edit" role="button" class="btn-secondary">Edit instance</a>
 	</div>
+	{#if instance.status === 'cancelled'}
+		<p class="status status-cancelled">
+			Cancelled — another date was confirmed. Its RSVPs are kept below for reference.
+		</p>
+	{:else if instance.status === 'proposed'}
+		<p class="status status-proposed">
+			Proposed — part of a date poll and not confirmed yet.
+			<a href="/organizer/events/{event.id}">Compare candidates</a>
+		</p>
+	{/if}
 	<p>{formatTime(instance.start_time)} – {formatTime(instance.end_time)}</p>
 	{#if instance.location}<p>📍 {instance.location}</p>{/if}
 	{#if instance.descriptionHtml}
@@ -143,4 +153,7 @@
 	.rsvp-maybe { color: #92400e; font-weight: 500; }
 	.rsvp-no { color: #991b1b; font-weight: 500; }
 	.rsvp-none { color: #9ca3af; }
+	.status { padding: 0.5rem 0.85rem; border-radius: 6px; font-size: 0.9rem; }
+	.status-cancelled { color: #991b1b; background: #fef2f2; border: 1px solid #fecaca; }
+	.status-proposed { color: #92400e; background: #fffbeb; border: 1px solid #fde68a; }
 </style>

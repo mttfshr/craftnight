@@ -15,6 +15,14 @@ export const GET: RequestHandler = async ({ params, locals, url }) => {
 		.where(and(eq(instances.id, params.instanceId), eq(instances.event_id, event.id)));
 	if (!instance) error(404, 'Instance not found');
 
+	// Only a confirmed date is calendar-worthy (FR-053, T085). A cancelled one
+	// must not be downloadable, and a proposed one is tentative — the card hides
+	// its link, and this makes the endpoint agree instead of relying on nobody
+	// knowing the URL. The route takes the id straight from the path, so the
+	// earlier note that it was "keyed off upcomingInstances[0]" was wrong.
+	// 404, not 403: don't confirm that a cancelled date ever existed.
+	if (instance.status !== 'confirmed') error(404, 'Instance not found');
+
 	// Per-occurrence text (what to bring, the agenda) leads; the series
 	// description follows. Both are markdown source, so both go through
 	// toPlainText — a calendar shows description text literally.
