@@ -1,7 +1,7 @@
 import { error, fail, redirect } from '@sveltejs/kit';
 import { events, instances, subscribers, rsvps } from '$lib/db/schema';
 import { eq, and, asc, inArray } from 'drizzle-orm';
-import { isPast } from '$lib/utils/dates';
+import { isPast, todayIn } from '$lib/utils/dates';
 import { toPlainText, withDescriptionHtml } from '$lib/server/markdown';
 import { validateTurnstileToken } from '$lib/server/turnstile';
 import { resolveSubscriber } from '$lib/server/subscribers';
@@ -16,7 +16,9 @@ export const load: PageServerLoad = async ({ params, locals, platform }) => {
 	const [event] = await db.select().from(events).where(eq(events.slug, params.slug));
 	if (!event) error(404, 'Event not found');
 
-	const today = new Date().toISOString().slice(0, 10);
+	// "Today" is the Event's local date, not the Worker's (UTC) date — otherwise
+	// tonight's event moves to Past at 5pm Pacific (FR-020, FR-056).
+	const today = todayIn(event.timezone);
 
 	const allInstances = await db
 		.select()
@@ -114,8 +116,17 @@ async function upsertRsvp(db: Db, subscriberId: string, instanceId: string, stat
 		});
 }
 
-/** Look up and validate an instance belongs to the given event and is not past. */
-async function loadAndValidateInstance(db: Db, instanceId: unknown, eventId: string) {
+/**
+ * Look up and validate an instance belongs to the given event and is not past.
+ * The lock is evaluated here, server-side, on every submit, against the
+ * Event's own timezone — so a stale open page can't record a late RSVP.
+ */
+async function loadAndValidateInstance(
+	db: Db,
+	instanceId: unknown,
+	eventId: string,
+	timezone: string
+) {
 	if (typeof instanceId !== 'string' || !instanceId) {
 		return { instance: null, err: 'No instance specified.' };
 	}
@@ -124,7 +135,9 @@ async function loadAndValidateInstance(db: Db, instanceId: unknown, eventId: str
 		.from(instances)
 		.where(and(eq(instances.id, instanceId), eq(instances.event_id, eventId)));
 	if (!instance) return { instance: null, err: 'Instance not found.' };
-	if (isPast(instance.date)) return { instance: null, err: 'This event has already passed.' };
+	if (isPast(instance.date, timezone)) {
+		return { instance: null, err: 'This event has already passed.' };
+	}
 	return { instance, err: null };
 }
 
@@ -159,7 +172,8 @@ export const actions: Actions = {
 		const { instance, err: instanceErr } = await loadAndValidateInstance(
 			db,
 			form.get('instanceId'),
-			event.id
+			event.id,
+			event.timezone
 		);
 		if (!instance) return fail(400, { error: instanceErr! });
 
@@ -229,7 +243,8 @@ export const actions: Actions = {
 		const { instance, err: instanceErr } = await loadAndValidateInstance(
 			db,
 			form.get('instanceId'),
-			event.id
+			event.id,
+			event.timezone
 		);
 		if (!instance) return fail(400, { error: instanceErr! });
 

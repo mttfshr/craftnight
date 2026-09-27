@@ -1,9 +1,45 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
 
 	const { event, instance } = $derived(data);
+
+	// FR-014a: the organizer's real communication channel is manual texting, so
+	// this list is a working tool. "Going" means yes or maybe.
+	const going = $derived(
+		data.subscribers.filter((s) => s.rsvpStatus === 'yes' || s.rsvpStatus === 'maybe')
+	);
+	const textable = $derived(going.filter((s) => s.phone));
+	// Guests with only an email can't be reached by text — say so rather than
+	// letting them silently drop off the list.
+	const emailOnly = $derived(going.filter((s) => !s.phone));
+	const phoneList = $derived(textable.map((s) => s.phone).join(', '));
+
+	// The copy button needs JS and a secure context. It only renders after
+	// mount, so without JS there is no dead button — just the selectable
+	// textarea beside it.
+	let canCopy = $state(false);
+	let copied = $state(false);
+	onMount(() => {
+		canCopy = !!navigator.clipboard;
+	});
+
+	async function copyPhones() {
+		try {
+			await navigator.clipboard.writeText(phoneList);
+			copied = true;
+			setTimeout(() => (copied = false), 1500);
+		} catch {
+			// Clipboard permission denied: the textarea is still selectable.
+		}
+	}
+
+	/** Digits and a leading + only, for tel: hrefs. Display keeps what was typed. */
+	function telHref(phone: string): string {
+		return 'tel:' + phone.replace(/[^\d+]/g, '');
+	}
 
 	function formatDate(date: string): string {
 		return new Date(date + 'T00:00:00').toLocaleDateString('en-US', {
@@ -52,6 +88,28 @@
 		</tbody>
 	</table>
 
+	<h2>Text the group</h2>
+	{#if textable.length === 0}
+		<p>No yes/maybe guests with a phone number yet.</p>
+	{:else}
+		<p>
+			{textable.length} going or maybe, with a phone number. Paste into the To: field of a new message.
+		</p>
+		<textarea
+			readonly
+			rows="2"
+			value={phoneList}
+			aria-label="Phone numbers of guests who are going or maybe"
+			onfocus={(e) => e.currentTarget.select()}
+		></textarea>
+		{#if canCopy}
+			<button type="button" onclick={copyPhones}>{copied ? 'Copied ✓' : 'Copy numbers'}</button>
+		{/if}
+	{/if}
+	{#if emailOnly.length > 0}
+		<p><small>Going or maybe, but no phone number, so not on this list: {emailOnly.map((s) => s.name).join(', ')}</small></p>
+	{/if}
+
 	<h2>Subscribers ({data.subscribers.length})</h2>
 	{#if data.subscribers.length === 0}
 		<p>No subscribers yet.</p>
@@ -64,7 +122,12 @@
 				{#each data.subscribers as sub}
 					<tr>
 						<td>{sub.name}</td>
-						<td>{sub.email ?? sub.phone ?? '—'}</td>
+						<td>
+							{#if sub.phone}<a href={telHref(sub.phone)}>{sub.phone}</a>{/if}
+							{#if sub.phone && sub.email}<br />{/if}
+							{#if sub.email}<a href="mailto:{sub.email}">{sub.email}</a>{/if}
+							{#if !sub.phone && !sub.email}—{/if}
+						</td>
 						<td class="rsvp-{sub.rsvpStatus ?? 'none'}">{sub.rsvpStatus ?? 'no response'}</td>
 					</tr>
 				{/each}
