@@ -7,30 +7,33 @@
 		"dev": "vite dev",
 		"build": "vite build",
 		"preview": "vite preview",
-		"prepare": "svelte-kit sync || echo ''",
-		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
+		"deploy": "npm run build && wrangler deploy",
+		"cf-types": "wrangler types ./src/worker-configuration.d.ts",
+		"db:generate": "drizzle-kit generate",
+		"db:migrate": "wrangler d1 migrations apply craftnight --local",
+		"db:migrate:remote": "wrangler d1 migrations apply craftnight --remote",
+		"db:studio": "drizzle-kit studio",
+		"hash-password": "node scripts/hash-password.mjs",
+		"prepare": "npm run cf-types || echo '' && svelte-kit sync || echo ''",
+		"check": "npm run cf-types && svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
 		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch"
 	},
 	"devDependencies": {
-		"@sveltejs/adapter-auto": "^7.0.1",
-		"@sveltejs/adapter-node": "^5.5.4",
+		"@sveltejs/adapter-cloudflare": "^7.2.9",
 		"@sveltejs/kit": "^2.57.0",
 		"@sveltejs/vite-plugin-svelte": "^7.0.0",
 		"@types/cookie": "^0.6.0",
-		"dotenv": "^17.4.2",
+		"@types/node": "^26.6.3",
 		"drizzle-kit": "^0.31.10",
 		"svelte": "^5.55.2",
 		"svelte-check": "^4.4.6",
 		"typescript": "^6.0.2",
-		"vite": "^8.0.7"
+		"vite": "^8.0.7",
+		"wrangler": "^4.142.0"
 	},
 	"dependencies": {
-		"@aws-sdk/client-s3": "^3.1041.0",
 		"cookie": "^1.1.1",
 		"drizzle-orm": "^0.45.2",
-		"jose": "^6.2.3",
-		"postgres": "^3.4.9",
-		"resend": "^6.12.2",
-		"twilio": "^6.0.0"
+		"micromark": "^4.0.3"
 	}
 }

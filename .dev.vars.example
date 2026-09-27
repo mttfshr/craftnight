@@ -1,0 +1,21 @@
+# Local development secrets for Miniflare / platformProxy.
+# Copy to .dev.vars (gitignored) and fill in. Production uses `wrangler secret put`.
+#
+# No dotenv here — wrangler does NOT interpolate, so do not escape `$`.
+# (The old .env required escaping every `$` in the bcrypt hash. That trap is gone.)
+
+# Random string, 32+ chars. Rotating it invalidates all sessions.
+SESSION_SECRET="dev-only-change-me-to-something-random"
+
+# Generate with: npx tsx scripts/hash-password.ts
+# Format: pbkdf2$<iterations>$<salt-b64>$<hash-b64>
+ORGANIZER_PASSWORD_HASH=""
+
+# Turnstile secret. LEAVING THIS EMPTY NOW REJECTS SUBMISSIONS (FR-057) —
+# it no longer silently passes. Use Cloudflare's always-passes test secret
+# for local work: 1x0000000000000000000000000000000AA
+CLOUDFLARE_TURNSTILE_SECRET="1x0000000000000000000000000000000AA"
+
+# Uncomment ONLY for local work to skip the organizer login. Must be exactly
+# "true". Never set this in production — the app refuses to honour it there.
+# DANGEROUSLY_DISABLE_ORGANIZER_AUTH="true"

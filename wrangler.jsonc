@@ -1,0 +1,40 @@
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "craftnight",
+	"compatibility_date": "2026-09-27",
+	// NOTE: nodejs_compat is deliberately NOT set. See NF-006 / ADR-006 —
+	// if a dependency needs node:* or Buffer, it doesn't belong in this codebase.
+	"compatibility_flags": [],
+	"main": ".svelte-kit/cloudflare/_worker.js",
+	"assets": {
+		"directory": ".svelte-kit/cloudflare",
+		"binding": "ASSETS"
+	},
+	"observability": {
+		"enabled": true
+	},
+	"d1_databases": [
+		{
+			"binding": "DB",
+			"database_name": "craftnight",
+			"database_id": "90e657c9-1ca8-486e-a336-0abfbb8297a9",
+			"migrations_dir": "drizzle/migrations"
+		}
+	],
+	"r2_buckets": [
+		{
+			"binding": "BUCKET",
+			"bucket_name": "craftnight-media"
+		}
+	],
+	"vars": {
+		// Public, non-secret. Set to the bucket's public r2.dev URL for now;
+		// swap for a custom domain later.
+		"R2_PUBLIC_URL": "https://pub-137766d77e9847848137d96590e87611.r2.dev",
+		"PUBLIC_TURNSTILE_SITE_KEY": "1x00000000000000000000AA"
+	}
+	// Secrets are NOT here. Local: .dev.vars. Production: `wrangler secret put`.
+	//   SESSION_SECRET
+	//   ORGANIZER_PASSWORD_HASH
+	//   CLOUDFLARE_TURNSTILE_SECRET
+}

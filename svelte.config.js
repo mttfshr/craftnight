@@ -1,4 +1,4 @@
-import adapter from '@sveltejs/adapter-node';
+import adapter from '@sveltejs/adapter-cloudflare';
 
 /** @type {import('@sveltejs/kit').Config} */
 const config = {
@@ -7,7 +7,14 @@ const config = {
 		runes: ({ filename }) => (filename.split(/[/\\]/).includes('node_modules') ? undefined : true)
 	},
 	kit: {
-		adapter: adapter()
+		adapter: adapter({
+			// Gives `vite dev` a real Miniflare-backed platform.env — local D1 and R2,
+			// and secrets from .dev.vars — without needing `wrangler dev`.
+			platformProxy: {
+				configPath: 'wrangler.jsonc',
+				persist: true
+			}
+		})
 	}
 };
 
