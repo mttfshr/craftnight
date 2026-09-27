@@ -2,9 +2,10 @@ import { error } from '@sveltejs/kit';
 import { events, instances } from '$lib/db/schema';
 import { eq, and } from 'drizzle-orm';
 import { buildICS } from '$lib/utils/ics';
+import { toPlainText } from '$lib/server/markdown';
 import type { RequestHandler } from './$types';
 
-export const GET: RequestHandler = async ({ params, locals }) => {
+export const GET: RequestHandler = async ({ params, locals, url }) => {
 	const [event] = await locals.db.select().from(events).where(eq(events.slug, params.slug));
 	if (!event) error(404, 'Event not found');
 
@@ -14,11 +15,29 @@ export const GET: RequestHandler = async ({ params, locals }) => {
 		.where(and(eq(instances.id, params.instanceId), eq(instances.event_id, event.id)));
 	if (!instance) error(404, 'Instance not found');
 
-	const ics = buildICS(event, instance);
+	// Per-occurrence text (what to bring, the agenda) leads; the series
+	// description follows. Both are markdown source, so both go through
+	// toPlainText — a calendar shows description text literally.
+	const description =
+		[toPlainText(instance.description), toPlainText(event.description)]
+			.filter(Boolean)
+			.join('\n\n') || null;
+
+	const ics = buildICS({
+		uid: instance.id,
+		name: event.name,
+		description,
+		location: instance.location,
+		url: `${url.origin}/events/${event.slug}`,
+		date: instance.date,
+		startTime: instance.start_time,
+		endTime: instance.end_time,
+		timeZone: event.timezone
+	});
 
 	return new Response(ics, {
 		headers: {
-			'Content-Type': 'text/calendar',
+			'Content-Type': 'text/calendar; charset=utf-8',
 			'Content-Disposition': 'attachment; filename="event.ics"',
 			'Cache-Control': 'no-cache'
 		}

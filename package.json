@@ -16,7 +16,9 @@
 		"hash-password": "node scripts/hash-password.mjs",
 		"prepare": "npm run cf-types || echo '' && svelte-kit sync || echo ''",
 		"check": "npm run cf-types && svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
-		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch"
+		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
+		"test": "vitest run",
+		"test:watch": "vitest"
 	},
 	"devDependencies": {
 		"@sveltejs/adapter-cloudflare": "^7.2.9",
@@ -29,6 +31,7 @@
 		"svelte-check": "^4.4.6",
 		"typescript": "^6.0.2",
 		"vite": "^8.0.7",
+		"vitest": "^5.0.2",
 		"wrangler": "^4.142.0"
 	},
 	"dependencies": {

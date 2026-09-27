@@ -2,6 +2,7 @@ import { error, fail, redirect } from '@sveltejs/kit';
 import { events, instances, subscribers, rsvps } from '$lib/db/schema';
 import { eq, and, asc, inArray } from 'drizzle-orm';
 import { isPast, todayIn } from '$lib/utils/dates';
+import { readContact } from '$lib/utils/contact';
 import { toPlainText, withDescriptionHtml } from '$lib/server/markdown';
 import { validateTurnstileToken } from '$lib/server/turnstile';
 import { resolveSubscriber } from '$lib/server/subscribers';
@@ -186,14 +187,14 @@ export const actions: Actions = {
 		if (typeof name !== 'string' || !name.trim()) {
 			return fail(400, { subscribeError: 'Name is required.', instanceId: instance.id });
 		}
-		const emailVal = typeof email === 'string' && email.trim() ? email.trim() : null;
-		const phoneVal = typeof phone === 'string' && phone.trim() ? phone.trim() : null;
-		if (!emailVal && !phoneVal) {
-			return fail(400, {
-				subscribeError: 'Email or phone number is required.',
-				instanceId: instance.id
-			});
+		// Normalized on the way in (T117a): equal contacts must be stored equal, or
+		// identity matching splits one guest into two. A filled-in field that
+		// can't be read is reported as that, not silently dropped.
+		const contact = readContact(email, phone);
+		if (contact.error) {
+			return fail(400, { subscribeError: contact.error, instanceId: instance.id });
 		}
+		const { email: emailVal, phone: phoneVal } = contact;
 		if (!isValidStatus(status)) {
 			return fail(400, {
 				subscribeError: 'Please select an RSVP status.',

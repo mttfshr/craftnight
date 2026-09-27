@@ -1,46 +1,38 @@
-Working on: Phase 15 — platform migration to Cloudflare Workers + D1. Spec reconciliation (Phase A) is complete; no code has changed yet.
-Status: Phases 1–13 complete and working on the old Node/Postgres stack. Phases 15–18 are spec'd and not started. Phase 14 (date polls) is spec'd, unstarted, and deliberately deferred until after Phase 17.
+Working on: Phases 15-17 are DONE and committed. Next is Phase 14 (date polls), then Phase 18 (deploy).
+Status: `npm run check` clean (0 errors), `npm test` green (106 tests), production build bundles cleanly (`wrangler deploy --dry-run`, no `nodejs_compat`, 112 KB gzipped server).
 
-## What just happened (2026-09-27)
+## Where things stand
 
-An architecture review before first deploy produced two new ADRs and a full reconciliation of the `.specify/` documents, which had drifted badly from the code.
+The app runs entirely on Cloudflare: Workers + D1 (SQLite) + R2 binding + Turnstile. No Docker, Postgres, or server. Descriptions are markdown in a textarea, rendered server-side with micromark. See ADR-006 and ADR-007 in `plan.md`; ADR-008 (tests) and ADR-009 (calendar times as UTC) were added in Phase 17.
 
-**ADR-006 — run entirely on Cloudflare.** The constitution valued self-hosting, but the app already depended on Cloudflare for ingress, images, bot protection, and analytics; the droplet was buying operational burden without buying independence. Decision: Workers + D1 + R2 bindings. Docker, Postgres, cloudflared, and the droplet all go away. Constitution value #3 amended from "owns the infrastructure" to "owns the data."
-
-**ADR-007 — markdown replaces Tiptap.** `isomorphic-dompurify` pulls jsdom, which cannot run on Workers. And ADR-002's premise ("the organizer is non-technical") was never true — the organizer is the developer. Plain textarea, markdown stored, `micromark` renders server-side with raw HTML escaped, so the sanitization step disappears entirely.
-
-**Spec reconciliation** (all four `.specify/` docs + this file): removed US7, US8, US11 and FR-010/011/012/016/017/024–027 and NF-004, all of which described blast infrastructure deleted on 2026-09-26. Added FR-014a, FR-056–059, NF-006, NF-007.
-
-## Three real bugs the review found
-
-These are fixed as part of Phase 15/17, not tracked separately:
-
-1. **Auth fails open.** `isOrganizerSessionValid()` returns `true` whenever `NODE_ENV !== 'production'`. The whole organizer surface is gated on one env var. On Workers `process.env.NODE_ENV` doesn't exist, so this would fail open in production. `validateTurnstileToken` has the same shape when the secret is unset. → FR-057, T098/T101.
-2. **Sessions never expire.** The signed payload is the literal constant `"authenticated"` — no `exp`, same string forever. `maxAge` is a client-side hint, so a copied cookie is valid until `SESSION_SECRET` rotates. Note `plan.md` Decision 1 already specified `{ exp: unixTimestamp }`; the implementation drifted. → NF-002, T098.
-3. **The midnight lock fires at 5pm.** `dates.ts` compares against `new Date().toISOString()`, i.e. UTC. → FR-020/FR-056, T114.
+Commits: `a4f0ba7` is one big snapshot of Phases 1-13 plus the migration (they were never committed individually and were rewritten in place). `3004e5a` and the Phase 17 commit follow it.
 
 ## Do this next
 
-Start Phase 15 in `.specify/tasks.md` (T086–T105). Order matters: toolchain → data layer → auth/crypto → thread `locals.db` through the routes.
+**Phase 14 — date polls** (`tasks.md` T077-T085; spec FR-047 to FR-055). Note T076 (the `instances.status` column) is already done: it was folded into the D1 schema. Build it against the D1 schema, and remember D1 has no multi-statement transactions: `confirmInstance` must flip one instance to `confirmed` and the others to `cancelled` using `db.batch()` so the two apply atomically. Write the failing test first, as Phase 17 did.
 
-**The one structural thing to understand before starting:** D1 is a per-request binding, so `import { db } from '$lib/db'` cannot work. `src/lib/db/index.ts` becomes a `makeDb(d1)` factory, `hooks.server.ts` builds `locals.db`, and ~11 route files change. `resolveSubscriber` takes `db` as its first parameter again — which is what `tasks.md` T039 originally specified before the code drifted to importing the singleton. Secrets move from `$env/static/private` to `platform.env` for the same reason.
+**Phase 18 — deploy.** Needs Matt: `wrangler secret put` for `SESSION_SECRET`, `ORGANIZER_PASSWORD_HASH` (generate with `npm run hash-password -- '<pw>'`), and `CLOUDFLARE_TURNSTILE_SECRET`; real Turnstile keys in place of the test ones; `npm run db:migrate:remote`; `npm run deploy`. Bucket public access is already enabled (`R2_PUBLIC_URL` is set).
 
-Second: WebCrypto HMAC is async where `node:crypto`'s was sync, so `isOrganizerSessionValid` and `readSubscriberCookieMap` become async and `hooks.server.ts` awaits both.
+## Not yet verified in a browser
 
-Phases: 15 (platform) → 16 (markdown) → 17 (timezone/ICS) → 14 (date polls) → 18 (deploy). Commit at each phase boundary.
+Everything below type-checks and the underlying logic is tested, but nobody has clicked through it:
+- Organizer login, and creating an event with markdown through the real forms (needs a password hash in `.dev.vars`)
+- The "Text the group" list and Copy button on the instance dashboard (T117)
+- The description textarea with JavaScript disabled
+- A real phone: RSVP flow on a device that has never seen the site (T122)
 
-## Key decisions locked in this session
+## Hard-won gotchas
 
-- **D1, not Hyperdrive or Neon.** Four small tables for a monthly 10–40 person event; SQLite is correct sizing, free, and one fewer vendor.
-- **No data migration.** Nothing is deployed, dev data is disposable. Fresh SQLite schema; the three Postgres migrations are retired, not translated.
-- **Phone numbers stay.** SMS as a *delivery channel* is gone for good, but `subscribers.phone` is load-bearing: manual texting is the actual communication channel. That's why FR-014a now requires `tel:` links and a one-tap copy of the yes/maybe phone list on the instance dashboard.
-- **No `nodejs_compat`.** Deliberately off, so a Node-shaped dependency fails at build instead of quietly bloating the bundle.
-- **`instances.status` is folded into the new schema** (T092) rather than added later by Phase 14's T076.
+- **Layout `load` does not run before form actions.** The organizer auth guard lives in `hooks.server.ts` (FR-060). An unauthenticated POST to `/organizer/events/new` once inserted a row. Never rely on `+layout.server.ts` alone.
+- **`$env/static/public` is build-time and reads `.env` files, not `wrangler.jsonc` vars.** Runtime values go through `platform.env` in `load()` and are passed down as page data.
+- **Never write a literal `<script` inside a `{@html}` template literal.** Svelte's compiler scans raw text for it first. Use `renderJsonLd()`, which also escapes `<`, `>`, `&` so a description can't close the tag.
+- **`svelte-check` and `checkJs`:** `tsconfig.json` has `checkJs: false` on purpose. Once a build exists, `wrangler types` imports the bundled Worker into the TS program and `checkJs` reports ~700 errors in generated code.
+- **`types: []` in tsconfig** keeps `process`, `Buffer`, and `node:*` out of the TS program (NF-006). Tests read migration SQL with `import.meta.glob`, not `node:fs`.
+- **Shell environments with `NODE_ENV=production`** (some agent tools set it) make `npm install`/`uninstall` prune every devDependency. Always run `NODE_ENV=development npm ... --include=dev`.
+- **D1 has no `now()` and no cross-statement transactions.** Timestamps are app-supplied; use `batch()` for atomic multi-statement writes.
+- **Contact fields are normalized on write** (`readContact`): emails lowercased, phones `+<digits>`. Anything new that stores an email or phone must go through it.
+- `wrangler dev`'s interactive `d1 create` / `r2 bucket create` prompts append duplicate bindings to `wrangler.jsonc` instead of filling the existing ones. Check the file afterward.
 
-## Gotchas carried forward
+## Commands
 
-- `{@const}` must be at the top of an `{#each}` block or you get a 500
-- `<svelte:head>` styles can't interpolate CSS variable values — use an inline `style` on a wrapper
-- The old `.env` `$`-escaping trap dies with dotenv; `.dev.vars` and `wrangler secret` don't interpolate
-- D1 has no cross-statement transactions. Only matters for Phase 14's `confirmInstance` — use `batch()`
-- Dev server may already be running on 5173; check before directing anyone to a URL
+`npm run check` · `npm test` · `npm run dev` · `npm run db:generate` · `npm run db:migrate` (local) · `npm run cf-types` (after editing `wrangler.jsonc`) · `npm run hash-password -- '<pw>'`

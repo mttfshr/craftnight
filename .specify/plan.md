@@ -29,9 +29,10 @@ Revised 2026-09-27 (ADR-006, ADR-007). The original plan targeted a DigitalOcean
 **Local dev**: `vite dev` with adapter-cloudflare's `platformProxy` enabled, so `platform.env` is backed by Miniflare — real local D1 and R2 without `wrangler dev`.
 
 **Dependencies**:
-- `drizzle-orm` + `drizzle-kit` — schema and migrations (SQLite dialect, `d1-http` driver for push)
+- `drizzle-orm` + `drizzle-kit` — schema and migrations (SQLite dialect; generate-only, `wrangler d1 migrations apply` applies)
 - `micromark` — markdown → HTML, server-side; escapes raw HTML by default, so no sanitizer is needed
 - `cookie` — cookie parsing
+- `vitest` (dev) — tests; DB tests use wrangler's own `getPlatformProxy`, so no extra test dependency
 
 **Removed Dependencies**:
 - ~~`@resend/node`~~, ~~`twilio`~~, ~~`jose`~~ — blast, SMS, magic links (ADR-001)
@@ -83,12 +84,16 @@ craftnight/
 ├── wrangler.jsonc                   # Worker name, compatibility_date, D1 + R2 bindings, vars
 ├── .dev.vars                        # Local secrets for platformProxy (gitignored)
 ├── drizzle.config.ts                # Drizzle-kit config — sqlite dialect, d1-http driver
+├── vitest.config.ts                 # deliberately not vite.config.ts: no SvelteKit plugin, no dev emulator
 ├── svelte.config.js                 # adapter-cloudflare, platformProxy enabled
 ├── vite.config.ts
 ├── package.json
 ├── tsconfig.json
 ├── scripts/
-│   └── hash-password.ts             # FR-059: generate the PBKDF2 hash for ORGANIZER_PASSWORD_HASH
+│   └── hash-password.mjs            # FR-059: generate the PBKDF2 hash (plain ESM: kept outside the TS project, NF-006)
+├── tests/                           # vitest: dates, ics, contact, subscribers (real in-memory D1)
+│   ├── support/db.ts                # createTestDb(): getPlatformProxy + the real migrations
+│   └── *.test.ts
 ├── drizzle/
 │   └── migrations/                  # SQLite migrations, applied via `wrangler d1 migrations apply`
 └── src/
@@ -104,15 +109,17 @@ craftnight/
     │   ├── server/
     │   │   ├── auth.ts              # Session sign/verify (WebCrypto HMAC, exp in payload); subscriber cookie read/write
     │   │   ├── password.ts          # PBKDF2 hash + constant-time verify (FR-059)
+    │   │   ├── db-errors.ts         # isUniqueViolation — walks .cause, because drizzle wraps driver errors
     │   │   ├── markdown.ts          # renderMarkdown / toPlainText / withDescriptionHtml — server-only (ADR-007)
     │   │   ├── subscribers.ts       # resolveSubscriber(db, ...) — cookie → email → phone → create
     │   │   ├── r2.ts                # uploadImage(bucket, file) via the R2 binding (ADR-006)
     │   │   └── turnstile.ts         # Turnstile validation; fails closed without a secret (FR-057)
     │   └── utils/
     │       ├── slugify.ts           # Event slug generation from name
-    │       ├── dates.ts             # Timezone-aware isPast/isUpcoming against events.timezone (FR-020, FR-056)
+    │       ├── dates.ts             # todayIn / isPast / isUpcoming / zonedTimeToUtc, all against events.timezone (FR-020, FR-056)
+    │       ├── contact.ts           # readContact / normalizePhone / normalizeEmail (FR-061)
     │       ├── jsonld.ts            # renderJsonLd — escapes < > & so descriptions can't close the <script> (FR-036)
-    │       └── ics.ts               # buildICS(event, instance) → RFC 5545 string with TZID + VTIMEZONE (FR-034)
+    │       └── ics.ts               # buildICS(input) → RFC 5545 string, UTC instants, escaped and folded (FR-034)
     └── routes/
         ├── events/
         │   └── [slug]/
@@ -664,3 +671,40 @@ The security property is the important part: `micromark` escapes raw HTML rather
 - Negative: No WYSIWYG. The organizer types markdown and sees the result after saving. Acceptable for one technical user writing a paragraph a month; revisit with a live preview pane if it ever grates.
 - Negative: Existing descriptions in the local dev database are HTML and will render as escaped text. Irrelevant — nothing is deployed and dev data is disposable (spec clarification, 2026-09-27).
 - Follow-on: the ICS `DESCRIPTION` field and the OG `description` meta tag must use a plain-text rendering of the markdown, not the source and not the HTML. `markdown.ts` exports `toPlainText` for this. The previous implementation passed stored HTML straight into the ICS file, so calendar clients showed literal tags (FR-034).
+
+---
+
+### ADR-008: Tests run in Node against a real in-memory D1 (2026-09-27)
+
+**Status**: Accepted
+
+**Context**: Phase 17 added the project's first tests. The logic most worth testing, `resolveSubscriber`, depends on SQLite behaviour: NULLs in unique indexes, CHECK constraints, and whether a unique index covers inactive rows.
+
+**Decision**: `vitest` in plain Node. Database tests get a real, empty, in-memory D1 from `getPlatformProxy` (already part of wrangler), with the project's actual migration SQL applied (`tests/support/db.ts`). `vitest.config.ts` is separate from `vite.config.ts` so tests don't start the SvelteKit plugin's Cloudflare emulator.
+
+**Alternatives Considered**:
+- **`@cloudflare/vitest-pool-workers`** — runs the tests inside workerd. Most faithful, but it pins `vitest ^4.1`, and the project is on Vite 8 where vitest 5 is what supports it. Version risk for no gain over `getPlatformProxy`, which already gives real D1.
+- **`better-sqlite3` or libsql in memory** — fast, but a different SQLite build behind a different driver, and a native dependency. It would test our assumptions rather than D1's behaviour.
+- **Pure functions only** — leaves `resolveSubscriber` untested, which was the point.
+
+**Consequences**:
+- Positive: the T117b bug (re-subscribe crashes on a UNIQUE constraint) and the double-submit race were found by tests written *before* the fix, against production semantics.
+- Positive: date, ICS and contact logic take an injectable clock or plain strings, so they need no database at all.
+- Negative: the DB tests boot workerd, about a second per file.
+- Note: tests live inside the TypeScript program and are held to `types: []`, so they read migration SQL with Vite's `import.meta.glob` rather than `node:fs`.
+
+---
+
+### ADR-009: Calendar times as UTC instants, not TZID + VTIMEZONE (2026-09-27)
+
+**Status**: Accepted — amends FR-034
+
+**Context**: The original FR-034 called for `DTSTART;TZID=...` plus a matching `VTIMEZONE` component. A correct VTIMEZONE for an arbitrary IANA zone has to be generated from rule data or shipped as a table, and clients differ in how they treat a missing or incomplete one.
+
+**Decision**: Convert the Instance's wall-clock time in the Event's `timezone` to a UTC instant (`zonedTimeToUtc`, using `Intl`) and write `DTSTART:...Z` / `DTEND:...Z`.
+
+**Consequences**:
+- Positive: nothing to generate, nothing for a client to interpret differently. Each Instance is a single occurrence, so an instant is exactly what a calendar needs, and a guest in another zone sees the correct local time.
+- Positive: `zonedTimeToUtc` is small and testable, including both 2026 DST transitions.
+- Negative: an exported event no longer records which zone the organizer meant. Irrelevant for one-off instances; it would matter if recurring events (RRULE) were ever added.
+- Known edge: a wall time that occurs twice (fall back) resolves to its first occurrence, and one that never occurs (spring forward) lands within an hour. Both are in the small hours.

@@ -2,6 +2,8 @@ import { error, fail, redirect } from '@sveltejs/kit';
 import { events, subscribers } from '$lib/db/schema';
 import { eq, and } from 'drizzle-orm';
 import { readSubscriberCookieMap, writeSubscriberCookieMap } from '$lib/server/auth';
+import { isUniqueViolation } from '$lib/server/db-errors';
+import { readContact } from '$lib/utils/contact';
 import type { PageServerLoad, Actions } from './$types';
 
 export const load: PageServerLoad = async ({ params, locals }) => {
@@ -56,17 +58,22 @@ export const actions: Actions = {
 			return fail(400, { error: 'Name is required.' });
 		}
 
-		const emailVal = typeof email === 'string' && email.trim() ? email.trim() : null;
-		const phoneVal = typeof phone === 'string' && phone.trim() ? phone.trim() : null;
+		const contact = readContact(email, phone);
+		if (contact.error) return fail(400, { error: contact.error });
 
-		if (!emailVal && !phoneVal) {
-			return fail(400, { error: 'Email or phone number is required.' });
+		try {
+			await locals.db
+				.update(subscribers)
+				.set({ name: name.trim(), email: contact.email, phone: contact.phone })
+				.where(eq(subscribers.id, subscriber.id));
+		} catch (e) {
+			// Changing your own contact to one another guest of this event already
+			// uses violates the unique index. Say so instead of returning a 500.
+			if (isUniqueViolation(e)) {
+				return fail(409, { error: 'Another guest already uses that email or phone number.' });
+			}
+			throw e;
 		}
-
-		await locals.db
-			.update(subscribers)
-			.set({ name: name.trim(), email: emailVal, phone: phoneVal })
-			.where(eq(subscribers.id, subscriber.id));
 
 		return { updated: true };
 	},
