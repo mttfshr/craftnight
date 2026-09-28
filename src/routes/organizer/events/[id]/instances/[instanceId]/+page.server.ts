@@ -1,8 +1,9 @@
-import { error } from '@sveltejs/kit';
+import { error, redirect } from '@sveltejs/kit';
 import { withDescriptionHtml } from '$lib/server/markdown';
+import { cancelInstance } from '$lib/server/instance-status';
 import { events, instances, subscribers, rsvps } from '$lib/db/schema';
 import { eq, and } from 'drizzle-orm';
-import type { PageServerLoad } from './$types';
+import type { PageServerLoad, Actions } from './$types';
 
 export const load: PageServerLoad = async ({ params, locals }) => {
 	const [event] = await locals.db.select().from(events).where(eq(events.id, params.id));
@@ -40,4 +41,18 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 		rsvpCounts: { yes, maybe, no, noResponse },
 		subscribers: subscriberList
 	};
+};
+
+export const actions: Actions = {
+	// "Cancel this date". Redirects back to the SAME page rather than away, so the
+	// organizer lands on the cancelled dashboard with the going/maybe phone list
+	// still on it, ready to text everyone. A repeat (double-click, second tab) is
+	// harmless: the second call finds it already cancelled and the redirect still
+	// shows the right state, so only a genuinely missing date is an error.
+	cancel: async ({ params, locals }) => {
+		const result = await cancelInstance(locals.db, params.id, params.instanceId);
+		if (!result.ok && result.reason === 'not_found') error(404, 'Instance not found');
+
+		redirect(303, `/organizer/events/${params.id}/instances/${params.instanceId}`);
+	}
 };

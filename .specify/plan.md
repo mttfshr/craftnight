@@ -111,6 +111,7 @@ craftnight/
     │   │   ├── password.ts          # PBKDF2 hash + constant-time verify (FR-059)
     │   │   ├── db-errors.ts         # isUniqueViolation — walks .cause, because drizzle wraps driver errors
     │   │   ├── polls.ts             # confirmInstance (validated, atomic via db.batch) + rsvpTallies (ADR-005)
+    │   │   ├── instance-status.ts   # cancelInstance: any non-cancelled date -> cancelled, conditional UPDATE (FR-065)
     │   │   ├── rsvp-target.ts       # loadRsvpTarget: proposed OK, cancelled rejected, date lock in event tz
     │   │   ├── markdown.ts          # renderMarkdown / toPlainText / withDescriptionHtml — server-only (ADR-007)
     │   │   ├── subscribers.ts       # resolveSubscriber(db, ...) — cookie → email → phone → create
@@ -395,7 +396,8 @@ The `load()` function returns `{ upcomingInstances, pastInstances }` instead of 
 - **The calendar endpoint 404s for anything not `confirmed`.** It takes the instance id from the URL, so hiding the link was never enough.
 - **Visibility is one pure function**, `partitionInstances`, so a cancelled candidate cannot leak into a section through some other code path.
 - **A candidate whose date passes unconfirmed stays visible but locked** (spec scenario 8), rather than showing a form that can only error.
-- **Known limit, unchanged:** one live poll per Event. There is still no way to cancel or delete a single instance; see the clarifications log.
+- **Cancelling a single date** is now supported for any non-cancelled instance (`cancelInstance`, FR-065): final, RSVPs kept, other candidates unaffected. "Already cancelled" is decided in one place only, the UPDATE's own `status != 'cancelled'` condition, which also makes a double-click yield exactly one success.
+- **Known limit, unchanged:** one live poll per Event.
 
 ---
 

@@ -10,6 +10,16 @@
 			? `Confirm ${date}? The other ${others} proposed date${others === 1 ? '' : 's'} will be cancelled and disappear from the public page. This can't be undone.`
 			: `Confirm ${date}?`;
 	}
+
+	// Cancelling sends nobody a message: the app has no notification channel, so
+	// the dialog says how many people to tell.
+	function cancelPrompt(date: string, going: number) {
+		const who =
+			going > 0
+				? `${going} guest${going === 1 ? ' has' : 's have'} said going or maybe, and won't be told automatically — you'd need to text them.`
+				: `Nobody has said going or maybe yet.`;
+		return `Cancel ${date}? It disappears from the public page and its calendar link stops working. ${who} This can't be undone.`;
+	}
 </script>
 
 <svelte:head>
@@ -52,6 +62,9 @@
 			{#if form?.confirmError}
 				<p class="notice-error">{form.confirmError}</p>
 			{/if}
+			{#if form?.cancelError}
+				<p class="notice-error">{form.cancelError}</p>
+			{/if}
 
 			<table>
 				<thead>
@@ -72,7 +85,7 @@
 							<td class="num yes">{candidate.tally.yes}</td>
 							<td class="num maybe">{candidate.tally.maybe}</td>
 							<td class="num no">{candidate.tally.no}</td>
-							<td>
+							<td class="actions">
 								<form
 									method="POST"
 									action="?/confirmInstance"
@@ -82,6 +95,16 @@
 								>
 									<input type="hidden" name="instanceId" value={candidate.id} />
 									<button type="submit">Confirm this date</button>
+								</form>
+								<form
+									method="POST"
+									action="?/cancelInstance"
+									onsubmit={(e) => {
+										if (!confirm(cancelPrompt(candidate.date, candidate.tally.yes + candidate.tally.maybe))) e.preventDefault();
+									}}
+								>
+									<input type="hidden" name="instanceId" value={candidate.id} />
+									<button type="submit" class="danger">Cancel</button>
 								</form>
 							</td>
 						</tr>
@@ -136,6 +159,9 @@
 	.maybe { color: #92400e; font-weight: 600; }
 	.no { color: #991b1b; font-weight: 600; }
 	.poll form { margin: 0; }
+	.actions { display: flex; gap: 0.5rem; justify-content: flex-end; }
+	.danger { background: transparent; color: #991b1b; border: 1px solid #991b1b; }
+	.danger:hover { background: #fef2f2; }
 
 	.cancelled td { opacity: 0.55; }
 	.badge { margin-left: 0.4rem; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em; padding: 0.1rem 0.45rem; border: 1px solid currentColor; border-radius: 999px; }

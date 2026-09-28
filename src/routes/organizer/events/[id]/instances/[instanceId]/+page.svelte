@@ -41,6 +41,17 @@
 		return 'tel:' + phone.replace(/[^\d+]/g, '');
 	}
 
+	// Cancelling sends nobody a message (no notification channel, ADR-001), so
+	// the dialog says how many people you'd have to tell.
+	const cancelPrompt = $derived.by(() => {
+		const going = data.rsvpCounts.yes + data.rsvpCounts.maybe;
+		const who =
+			going > 0
+				? `${going} guest${going === 1 ? ' has' : 's have'} said going or maybe, and won't be told automatically — you'd need to text them. The list is on this page afterward.`
+				: 'Nobody has said going or maybe yet.';
+		return `Cancel ${instance.date}? It disappears from the public page and its calendar link stops working. ${who} This can't be undone.`;
+	});
+
 	function formatDate(date: string): string {
 		return new Date(date + 'T00:00:00').toLocaleDateString('en-US', {
 			weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'
@@ -63,11 +74,26 @@
 
 	<div style="display:flex; align-items:center; justify-content:space-between; gap:1rem;">
 		<h1>{formatDate(instance.date)}</h1>
-		<a href="/organizer/events/{event.id}/instances/{instance.id}/edit" role="button" class="btn-secondary">Edit instance</a>
+		<div class="header-actions">
+			<a href="/organizer/events/{event.id}/instances/{instance.id}/edit" role="button" class="btn-secondary">Edit instance</a>
+			{#if instance.status !== 'cancelled'}
+				<form
+					method="POST"
+					action="?/cancel"
+					onsubmit={(e) => {
+						if (!confirm(cancelPrompt)) e.preventDefault();
+					}}
+				>
+					<button type="submit" class="danger">Cancel this date</button>
+				</form>
+			{/if}
+		</div>
 	</div>
 	{#if instance.status === 'cancelled'}
 		<p class="status status-cancelled">
-			Cancelled — another date was confirmed. Its RSVPs are kept below for reference.
+			Cancelled. It no longer appears on the public page and its calendar link no longer works.
+			Its RSVPs are kept below for reference, and the list under “Text the group” is still here
+			if you need to tell people.
 		</p>
 	{:else if instance.status === 'proposed'}
 		<p class="status status-proposed">
@@ -156,4 +182,8 @@
 	.status { padding: 0.5rem 0.85rem; border-radius: 6px; font-size: 0.9rem; }
 	.status-cancelled { color: #991b1b; background: #fef2f2; border: 1px solid #fecaca; }
 	.status-proposed { color: #92400e; background: #fffbeb; border: 1px solid #fde68a; }
+	.header-actions { display: flex; align-items: center; gap: 0.5rem; }
+	.header-actions form { margin: 0; }
+	.danger { background: transparent; color: #991b1b; border: 1px solid #991b1b; }
+	.danger:hover { background: #fef2f2; }
 </style>

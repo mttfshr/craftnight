@@ -3,6 +3,7 @@ import { eq, desc } from 'drizzle-orm';
 import { error, fail } from '@sveltejs/kit';
 import { withDescriptionHtml } from '$lib/server/markdown';
 import { confirmInstance, rsvpTallies } from '$lib/server/polls';
+import { cancelInstance } from '$lib/server/instance-status';
 import type { PageServerLoad, Actions } from './$types';
 
 export const load: PageServerLoad = async ({ params, locals }) => {
@@ -59,5 +60,24 @@ export const actions: Actions = {
 		}
 
 		return { confirmedId: result.confirmedId, cancelledCount: result.cancelledIds.length };
+	},
+
+	// "Cancel" on a date-poll candidate. Cancelling one candidate leaves the rest
+	// of the poll running; all the rules live in cancelInstance.
+	cancelInstance: async ({ request, params, locals }) => {
+		const form = await request.formData();
+		const instanceId = form.get('instanceId');
+		if (typeof instanceId !== 'string' || !instanceId) {
+			return fail(400, { cancelError: 'No date was selected.' });
+		}
+
+		const result = await cancelInstance(locals.db, params.id, instanceId);
+		if (!result.ok) {
+			return result.reason === 'not_found'
+				? fail(404, { cancelError: 'That date no longer exists.' })
+				: fail(409, { cancelError: 'That date was already cancelled. Reload to see the current state.' });
+		}
+
+		return { cancelledId: result.cancelledId };
 	}
 };

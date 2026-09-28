@@ -1,5 +1,5 @@
 Working on: Phases 14-17 are DONE and the app is deploy-ready pending YOUR steps below. Only Phase 18 (deploy) remains, plus two open product questions.
-Status: `npm run check` clean (0 errors), `npm test` green (267 tests, 11 files), production build bundles cleanly, and `npm run deploy:check` currently refuses to deploy for exactly one reason (see below).
+Status: `npm run check` clean (0 errors), `npm test` green (283 tests, 12 files), production build bundles cleanly, and `npm run deploy:check` currently refuses to deploy for exactly one reason (see below).
 
 ## Where things stand
 
@@ -25,14 +25,13 @@ The app runs entirely on Cloudflare: Workers + D1 (SQLite) + R2 binding + Turnst
 
 ## Open questions for Matt (not built)
 
-- **No way to cancel or delete a single instance.** A candidate created by mistake, or a date poll abandoned without confirming any date, can only be cleared by confirming a sibling; a lone mistaken instance can't be removed at all. Not in the spec. Probably wants a "Cancel this date" action on the instance dashboard.
-- **Safari and login.** The session cookie is `Secure` unconditionally on the assumption that browsers exempt localhost. If Safari keeps bouncing to the login page in local dev, that's the first suspect (Safari has historically refused `Secure` cookies over plain `http://localhost`). Irrelevant in production over HTTPS.
+None outstanding. Answered: cancelling a single date is built (any non-cancelled date, final, RSVPs kept: FR-065), and Safari has not shown the `Secure`-cookie login problem, so the cookie is unchanged. Still unbuilt and worth knowing about: a *past* confirmed date can also be cancelled (erasing it from the public Past section); a calendar file a guest already downloaded can't be recalled after a cancel; and there is no login rate limiting (see above).
 
 ## Not yet verified in a browser
 
 Logic is tested and the served HTML has been checked with curl, but nobody has clicked through:
 - Organizer login and creating an event through the real forms (needs a password hash in `.dev.vars`)
-- The "Confirm this date" button and its `confirm()` dialog; the layout of the Proposed table
+- The "Confirm this date", "Cancel" and "Cancel this date" buttons and their `confirm()` dialogs (curl can't run JavaScript, so the dialog text and the button layout are unseen); the layout of the Proposed table
 - Guest error messages appearing IN PLACE when JavaScript is on (reasoned from how `use:enhance` works; only the no-JS path was tested)
 - The "Text the group" list and Copy button on the instance dashboard
 - The description textarea with JavaScript disabled
@@ -40,6 +39,7 @@ Logic is tested and the served HTML has been checked with curl, but nobody has c
 ## Hard-won gotchas
 
 - **Layout `load` does not run before form actions.** The organizer auth guard lives in `hooks.server.ts` (FR-060). An unauthenticated POST to `/organizer/events/new` once inserted a row.
+- **A form action POST needs a form `Content-Type`, even with no fields.** An empty-bodied curl POST gets `415 Unsupported Media Type` and does nothing; send `--data ''`. A browser always sends the header, so this only bites test scripts. Combined with the `Accept` gotcha below, a script that gets `415` or a JSON `200` is usually the script's fault, not the app's.
 - **`curl` sends `Accept: */*`, which SvelteKit resolves to its JSON action protocol** (a `200` wrapping `{"type":"failure","status":400,...}`), not the HTML a browser gets. To test what a browser without JS sees, send `-H 'Accept: text/html'`.
 - **To test as the organizer without touching real secrets:** run `wrangler dev --local --var SESSION_SECRET:<throwaway>` and sign a `craftnight_organizer` cookie (`base64url({exp})` + `.` + hex HMAC-SHA256) with that throwaway. A tampered cookie is rejected.
 - **A security test that passes first time proves nothing until it has been made to fail.** The auth tests were mutation-checked: break `auth.ts` on purpose, confirm the tests catch it, `git checkout` the file. Do the same when changing auth.
