@@ -7,19 +7,18 @@ The app runs entirely on Cloudflare: Workers + D1 (SQLite) + R2 binding + Turnst
 
 ## Do this next — Phase 18, deploy (needs Matt)
 
-`npm run deploy:check` runs the preflight on its own. Today it says: **the Turnstile site key in `wrangler.jsonc` is Cloudflare's dummy key.** That is the only problem it finds. In order:
+`npm run deploy:check` runs the preflight on its own. Today it says one thing: **the Turnstile site key in `wrangler.jsonc` is Cloudflare's dummy key.** Status of the steps:
 
-1. **Create a real Turnstile widget** in the Cloudflare dashboard (Turnstile). Put its *site key* in `wrangler.jsonc` `vars.PUBLIC_TURNSTILE_SITE_KEY`. Keep its *secret key* for step 3. The two must belong to the same widget.
-2. **Generate the password hash:** `npm run hash-password -- '<a long random password>'`. Copy the `pbkdf2$...` value.
-3. **Set the three production secrets.** The Worker doesn't exist yet; `wrangler secret put` will ask whether to create it and add the secret (say yes):
-   `npx wrangler secret put SESSION_SECRET` (any long random string; rotating it logs everyone out)
-   `npx wrangler secret put ORGANIZER_PASSWORD_HASH` (the value from step 2)
-   `npx wrangler secret put CLOUDFLARE_TURNSTILE_SECRET` (the widget's secret from step 1)
-4. `npm run db:migrate:remote` (the remote D1 has never been migrated).
-5. `npm run deploy` (runs the preflight, builds, deploys; refuses if anything above is missing).
-6. Real-world check (T122): log in, create an event, publish an instance, send the link, and RSVP from a phone that has never seen the site.
+- [x] **Remote database migrated** (2026-09-27): all 4 tables, 9 indexes, the CHECK constraints, empty, nothing pending.
+- [ ] **1. Create a real Turnstile widget** (Cloudflare dashboard, Turnstile, Add widget; mode Managed). It needs a hostname: your Worker's `craftnight.<your-subdomain>.workers.dev` address (Workers & Pages overview shows the subdomain). Hostnames can be edited later, so add the custom domain when you have one. Put the widget's **site key** in `wrangler.jsonc` `vars.PUBLIC_TURNSTILE_SITE_KEY` (it is public; safe to paste anywhere). Keep the **secret key** for step 2.
+- [ ] **2. Set the three production secrets.** The Worker doesn't exist yet; the first `wrangler secret put` asks whether to create it (say yes). None of these values needs to be displayed or pasted anywhere:
+  - `openssl rand -base64 48 | npx wrangler secret put SESSION_SECRET` (random; nobody ever needs to see it; rotating it logs everyone out)
+  - `npx wrangler secret put CLOUDFLARE_TURNSTILE_SECRET` (paste the widget's secret at the hidden prompt; must belong to the SAME widget as the site key)
+  - `read -s "PW?Password: "; echo; printf %s "$PW" | node scripts/hash-password.mjs --raw | npx wrangler secret put ORGANIZER_PASSWORD_HASH; unset PW` (your organizer password, typed at a hidden prompt; never in shell history, the hash never displayed). Use `node`, not `npm run`: npm's banner would end up inside the secret.
+- [ ] **3.** `npm run deploy:check`, then `npm run deploy` (runs the preflight, builds, deploys; refuses if anything above is missing). The very first deploy may ask you to register a workers.dev subdomain if the account has none.
+- [ ] **4. Real-world check (T122):** log in, create an event, publish an instance, send the link, RSVP from a phone that has never seen the site.
 
-**Login CPU on the Workers FREE plan.** PBKDF2 costs ~6-7 ms per login in workerd, against a ~10 ms free-plan CPU limit. If login fails in production with "Worker exceeded CPU time limit": `npm run hash-password -- '<same password>' 50000`, then `wrangler secret put ORGANIZER_PASSWORD_HASH`. No code change or redeploy; the count lives inside the hash. Not an issue on the Paid plan.
+**Login CPU on the Workers FREE plan.** PBKDF2 costs ~6-7 ms per login in workerd, against a ~10 ms free-plan CPU limit. If login fails in production with "Worker exceeded CPU time limit": re-run the password one-liner above with `--iterations 50000` added to the `node scripts/hash-password.mjs` command. No code change or redeploy; the count lives inside the hash. Not an issue on the Paid plan.
 
 **No login rate limiting exists.** Nothing slows repeated password guesses except the hash cost. Use a long random password, and consider a Cloudflare WAF rate-limiting rule on `/organizer/login` or Turnstile on the login form. Not built.
 
@@ -39,6 +38,7 @@ Logic is tested and the served HTML has been checked with curl, but nobody has c
 ## Hard-won gotchas
 
 - **Layout `load` does not run before form actions.** The organizer auth guard lives in `hooks.server.ts` (FR-060). An unauthenticated POST to `/organizer/events/new` once inserted a row.
+- **Never pipe `npm run ...` into `wrangler secret put`.** npm prints a `> craftnight@0.0.1 ...` banner to stdout, which would become part of the secret (and `wrangler` only trims trailing whitespace). Call `node scripts/hash-password.mjs --raw` directly; `npm run -s` also works but is easy to forget.
 - **A form action POST needs a form `Content-Type`, even with no fields.** An empty-bodied curl POST gets `415 Unsupported Media Type` and does nothing; send `--data ''`. A browser always sends the header, so this only bites test scripts. Combined with the `Accept` gotcha below, a script that gets `415` or a JSON `200` is usually the script's fault, not the app's.
 - **`curl` sends `Accept: */*`, which SvelteKit resolves to its JSON action protocol** (a `200` wrapping `{"type":"failure","status":400,...}`), not the HTML a browser gets. To test what a browser without JS sees, send `-H 'Accept: text/html'`.
 - **To test as the organizer without touching real secrets:** run `wrangler dev --local --var SESSION_SECRET:<throwaway>` and sign a `craftnight_organizer` cookie (`base64url({exp})` + `.` + hex HMAC-SHA256) with that throwaway. A tampered cookie is rejected.
@@ -56,4 +56,4 @@ Logic is tested and the served HTML has been checked with curl, but nobody has c
 
 ## Commands
 
-`npm run check` · `npm test` · `npm run dev` · `npm run deploy:check` · `npm run deploy` · `npm run db:generate` · `npm run db:migrate` (local) · `npm run db:migrate:remote` · `npm run cf-types` (after editing `wrangler.jsonc`) · `npm run hash-password -- '<pw>' [iterations]`
+`npm run check` · `npm test` · `npm run dev` · `npm run deploy:check` · `npm run deploy` · `npm run db:generate` · `npm run db:migrate` (local) · `npm run db:migrate:remote` · `npm run cf-types` (after editing `wrangler.jsonc`) · `npm run hash-password -- '<pw>' [iterations]` (human-readable) or `node scripts/hash-password.mjs --raw` (pipe-safe)
