@@ -86,10 +86,26 @@ describe('verifyPassword fails CLOSED (FR-057)', () => {
 	});
 
 	it('rejects a hash with one character changed', async () => {
+		// Change the FIRST character of the key field: all six of its bits are
+		// significant, so the decoded bytes always differ. (An earlier version of
+		// this test changed the character before the final "=". That character
+		// carries only 4 real bits plus 2 padding bits, so swapping A for B decodes
+		// to the SAME bytes and the hash still verified: the test failed about 1 run
+		// in 16, at random. The app was right to accept it; the test was wrong.)
+		// Many hashes are tried so the result doesn't hinge on one random sample.
+		for (let i = 0; i < 16; i++) {
+			const hash = await hashPassword('pw', FAST);
+			const [scheme, iterations, salt, key] = hash.split('$');
+			const tampered = [scheme, iterations, salt, (key[0] === 'A' ? 'B' : 'A') + key.slice(1)].join('$');
+			expect(tampered).not.toBe(hash);
+			expect(await verifyPassword('pw', tampered)).toBe(false);
+		}
+	});
+
+	it('tampering with the salt also fails', async () => {
 		const hash = await hashPassword('pw', FAST);
-		const last = hash.slice(-2, -1); // a char before the '=' padding
-		const tampered = hash.slice(0, -2) + (last === 'A' ? 'B' : 'A') + hash.slice(-1);
-		expect(tampered).not.toBe(hash);
+		const [scheme, iterations, salt, key] = hash.split('$');
+		const tampered = [scheme, iterations, (salt[0] === 'A' ? 'B' : 'A') + salt.slice(1), key].join('$');
 		expect(await verifyPassword('pw', tampered)).toBe(false);
 	});
 });
