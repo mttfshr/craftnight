@@ -13,7 +13,14 @@ import { defineConfig } from 'vitest/config';
  */
 export default defineConfig({
 	resolve: {
-		alias: { $lib: new URL('./src/lib', import.meta.url).pathname }
+		alias: {
+			$lib: new URL('./src/lib', import.meta.url).pathname,
+			// auth.ts imports `dev` from here. In a real build it is a compile-time
+			// constant; under test it is a stub that defaults to false (production
+			// behaviour). A test that needs the dev branch overrides it with vi.mock.
+			'$app/environment': new URL('./tests/support/stubs/app-environment.ts', import.meta.url)
+				.pathname
+		}
 	},
 	test: {
 		include: ['tests/**/*.test.ts'],
